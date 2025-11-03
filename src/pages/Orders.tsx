@@ -30,23 +30,47 @@ const Orders = () => {
   const fetchOrders = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      
+      // Fetch database orders
+      let dbOrders: any[] = [];
+      if (user) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            *,
+            restaurants (
+              name,
+              image_url,
+              address
+            )
+          `)
+          .eq('customer_id', user.id)
+          .order('created_at', { ascending: false });
 
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          restaurants (
-            name,
-            image_url,
-            address
-          )
-        `)
-        .eq('customer_id', user.id)
-        .order('created_at', { ascending: false });
+        if (!error && data) {
+          dbOrders = data;
+        }
+      }
 
-      if (error) throw error;
-      setOrders(data || []);
+      // Fetch mock orders from localStorage
+      const mockOrders = JSON.parse(localStorage.getItem('mockOrders') || '[]');
+      
+      // Transform mock orders to match database format
+      const transformedMockOrders = mockOrders.map((order: any) => ({
+        ...order,
+        restaurants: order.restaurant ? {
+          name: order.restaurant.name,
+          image_url: order.restaurant.image,
+          address: order.restaurant.address
+        } : null
+      }));
+
+      // Combine and sort all orders
+      const allOrders = [...dbOrders, ...transformedMockOrders].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setOrders(allOrders);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
       toast.error('Failed to load orders');

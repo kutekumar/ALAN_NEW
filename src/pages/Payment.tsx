@@ -66,6 +66,9 @@ const Payment = () => {
 
       if (!isUuid) {
         const order = buildLocalOrder();
+        // Store mock order in localStorage
+        const existingOrders = JSON.parse(localStorage.getItem('mockOrders') || '[]');
+        localStorage.setItem('mockOrders', JSON.stringify([...existingOrders, { ...order, restaurant, created_at: new Date().toISOString() }]));
         toast.success('Payment successful! (mock)');
         navigate('/confirmation', { state: { order, restaurant, orderType } });
         return;
@@ -108,6 +111,9 @@ const Payment = () => {
         qr_code: qrData,
         order_items: cart,
       };
+      // Store mock order in localStorage
+      const existingOrders = JSON.parse(localStorage.getItem('mockOrders') || '[]');
+      localStorage.setItem('mockOrders', JSON.stringify([...existingOrders, { ...order, restaurant, created_at: new Date().toISOString() }]));
       toast.success('Payment successful! (mock)');
       navigate('/confirmation', { state: { order, restaurant, orderType } });
     } finally {
