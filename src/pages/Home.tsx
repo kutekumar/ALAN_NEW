@@ -1,19 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, Star, MapPin } from 'lucide-react';
-import { mockRestaurants } from '@/data/mockData';
+import { Search, Star, MapPin, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BottomNav } from '@/components/BottomNav';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+interface Restaurant {
+  id: string;
+  name: string;
+  description: string | null;
+  cuisine_type: string | null;
+  address: string;
+  phone: string | null;
+  image_url: string | null;
+  rating: number | null;
+  distance: string | null;
+  open_hours: string | null;
+}
 
 const Home = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const filteredRestaurants = mockRestaurants.filter(restaurant =>
+  useEffect(() => {
+    fetchRestaurants();
+  }, []);
+
+  const fetchRestaurants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .order('rating', { ascending: false });
+
+      if (error) throw error;
+      setRestaurants(data || []);
+    } catch (error) {
+      console.error('Error fetching restaurants:', error);
+      toast.error('Failed to load restaurants');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredRestaurants = restaurants.filter(restaurant =>
     restaurant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    restaurant.cuisine_type.toLowerCase().includes(searchQuery.toLowerCase())
+    (restaurant.cuisine_type?.toLowerCase() || '').includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -41,7 +78,16 @@ const Home = () => {
 
       {/* Restaurant List */}
       <div className="max-w-md mx-auto px-6 py-6 space-y-4">
-        {filteredRestaurants.map((restaurant) => (
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : filteredRestaurants.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            No restaurants found
+          </div>
+        ) : (
+          filteredRestaurants.map((restaurant) => (
           <Card
             key={restaurant.id}
             className="overflow-hidden cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
@@ -80,7 +126,8 @@ const Home = () => {
               </div>
             </div>
           </Card>
-        ))}
+          ))
+        )}
       </div>
 
       <BottomNav />

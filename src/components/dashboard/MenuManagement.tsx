@@ -1,252 +1,311 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MenuItem {
   id: string;
+  restaurant_id: string;
   name: string;
+  description: string | null;
   price: number;
-  category: string;
-  image: string;
+  image_url: string | null;
   available: boolean;
 }
 
-const mockMenuItems: MenuItem[] = [
-  {
-    id: '1',
-    name: 'Mohinga',
-    price: 2000,
-    category: 'Traditional',
-    image: '/placeholder.svg',
-    available: true
-  },
-  {
-    id: '2',
-    name: 'Shan Noodles',
-    price: 2500,
-    category: 'Noodles',
-    image: '/placeholder.svg',
-    available: true
-  },
-  {
-    id: '3',
-    name: 'Laphet Thoke',
-    price: 3000,
-    category: 'Salad',
-    image: '/placeholder.svg',
-    available: false
-  }
-];
-
 const MenuManagement = () => {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(mockMenuItems);
-  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const { user } = useAuth();
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-
+  const [editingItem, setEditingItem] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
+    description: '',
     price: '',
-    category: '',
-    image: '',
-    available: true
+    image_url: ''
   });
+
+  useEffect(() => {
+    if (user) {
+      fetchRestaurantAndMenu();
+    }
+  }, [user]);
+
+  const fetchRestaurantAndMenu = async () => {
+    try {
+      // Get restaurant owned by this user
+      const { data: restaurant, error: restaurantError } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('owner_id', user?.id)
+        .single();
+
+      if (restaurantError) throw restaurantError;
+      setRestaurantId(restaurant.id);
+
+      // Get menu items for this restaurant
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('restaurant_id', restaurant.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setMenuItems(data || []);
+    } catch (error) {
+      console.error('Error fetching menu:', error);
+      toast.error('Failed to load menu items');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAdd = () => {
     setEditingItem(null);
-    setFormData({ name: '', price: '', category: '', image: '', available: true });
+    setFormData({ name: '', description: '', price: '', image_url: '' });
     setIsDialogOpen(true);
   };
 
   const handleEdit = (item: MenuItem) => {
-    setEditingItem(item);
+    setEditingItem(item.id);
     setFormData({
       name: item.name,
+      description: item.description || '',
       price: item.price.toString(),
-      category: item.category,
-      image: item.image,
-      available: item.available
+      image_url: item.image_url || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    setMenuItems(menuItems.filter(item => item.id !== id));
-    toast.success('Menu item deleted');
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setMenuItems(menuItems.filter(item => item.id !== id));
+      toast.success('Menu item deleted');
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      toast.error('Failed to delete menu item');
+    }
   };
 
-  const handleSubmit = () => {
-    if (!formData.name || !formData.price || !formData.category) {
-      toast.error('Please fill all required fields');
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.price || !restaurantId) {
+      toast.error('Please fill in all required fields');
       return;
     }
 
-    if (editingItem) {
-      setMenuItems(menuItems.map(item =>
-        item.id === editingItem.id
-          ? { ...item, ...formData, price: parseFloat(formData.price) }
-          : item
-      ));
-      toast.success('Menu item updated');
-    } else {
-      const newItem: MenuItem = {
-        id: Date.now().toString(),
+    try {
+      const itemData = {
         name: formData.name,
+        description: formData.description || null,
         price: parseFloat(formData.price),
-        category: formData.category,
-        image: formData.image || '/placeholder.svg',
-        available: formData.available
+        image_url: formData.image_url || null,
+        restaurant_id: restaurantId
       };
-      setMenuItems([...menuItems, newItem]);
-      toast.success('Menu item added');
-    }
 
-    setIsDialogOpen(false);
+      if (editingItem) {
+        const { error } = await supabase
+          .from('menu_items')
+          .update(itemData)
+          .eq('id', editingItem);
+
+        if (error) throw error;
+
+        setMenuItems(menuItems.map(item =>
+          item.id === editingItem
+            ? { ...item, ...itemData }
+            : item
+        ));
+        toast.success('Menu item updated');
+      } else {
+        const { data, error } = await supabase
+          .from('menu_items')
+          .insert([{ ...itemData, available: true }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        
+        setMenuItems([data, ...menuItems]);
+        toast.success('Menu item added');
+      }
+
+      setIsDialogOpen(false);
+      setFormData({ name: '', description: '', price: '', image_url: '' });
+    } catch (error) {
+      console.error('Error saving menu item:', error);
+      toast.error('Failed to save menu item');
+    }
   };
 
-  const toggleAvailability = (id: string) => {
-    setMenuItems(menuItems.map(item =>
-      item.id === id ? { ...item, available: !item.available } : item
-    ));
+  const toggleAvailability = async (id: string) => {
+    const item = menuItems.find(i => i.id === id);
+    if (!item) return;
+
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .update({ available: !item.available })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setMenuItems(menuItems.map(i =>
+        i.id === id ? { ...i, available: !i.available } : i
+      ));
+      toast.success('Availability updated');
+    } catch (error) {
+      console.error('Error updating availability:', error);
+      toast.error('Failed to update availability');
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Menu Management</h2>
-          <p className="text-muted-foreground">Manage your restaurant menu items</p>
+          <h2 className="text-2xl font-bold text-foreground">Menu</h2>
+          <p className="text-muted-foreground">Manage your menu items</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={handleAdd} className="luxury-gradient">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Item
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit' : 'Add'} Menu Item</DialogTitle>
-              <DialogDescription>
-                {editingItem ? 'Update' : 'Create'} a menu item for your restaurant
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Mohinga"
+        <Button onClick={handleAdd} className="luxury-gradient">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Item
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : menuItems.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            No menu items yet. Add your first item to get started!
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-4">
+          {menuItems.map((item) => (
+            <Card key={item.id}>
+              <div className="relative">
+                <img
+                  src={item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'}
+                  alt={item.name}
+                  className="w-full h-48 object-cover"
                 />
+                <div className="absolute top-2 right-2 flex gap-2">
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    onClick={() => handleEdit(item)}
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="destructive"
+                    onClick={() => handleDelete(item.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="price">Price (MMK) *</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  placeholder="2000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
-                <Input
-                  id="category"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  placeholder="e.g., Traditional"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="image">Image URL</Label>
-                <Input
-                  id="image"
-                  value={formData.image}
-                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                  placeholder="/placeholder.svg"
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="available"
-                  checked={formData.available}
-                  onCheckedChange={(checked) => setFormData({ ...formData, available: checked })}
-                />
-                <Label htmlFor="available">Available</Label>
-              </div>
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-semibold">{item.name}</h3>
+                    {item.description && (
+                      <p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>
+                    )}
+                  </div>
+                  <p className="font-semibold text-primary ml-2">{item.price.toLocaleString()} MMK</p>
+                </div>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-sm text-muted-foreground">Available</span>
+                  <Switch
+                    checked={item.available}
+                    onCheckedChange={() => toggleAvailability(item.id)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingItem ? 'Edit' : 'Add'} Menu Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g., Traditional Mohinga"
+              />
             </div>
-            <DialogFooter>
+
+            <div className="space-y-2">
+              <Label htmlFor="price">Price (MMK) *</Label>
+              <Input
+                id="price"
+                type="number"
+                value={formData.price}
+                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                placeholder="5000"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Describe the dish..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="image_url">Image URL</Label>
+              <Input
+                id="image_url"
+                value={formData.image_url}
+                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                placeholder="https://..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
               <Button onClick={handleSubmit} className="luxury-gradient">
                 {editingItem ? 'Update' : 'Add'} Item
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {menuItems.map((item) => (
-          <Card key={item.id} className="border-border/50 luxury-shadow">
-            <CardHeader className="p-0">
-              <div className="relative h-48 bg-muted rounded-t-lg overflow-hidden">
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-2 right-2">
-                  <Switch
-                    checked={item.available}
-                    onCheckedChange={() => toggleAvailability(item.id)}
-                  />
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4">
-              <div className="space-y-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{item.name}</CardTitle>
-                    <CardDescription className="text-xs">{item.category}</CardDescription>
-                  </div>
-                </div>
-                <p className="text-xl font-bold text-primary">{item.price} MMK</p>
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(item)}
-                    className="flex-1"
-                  >
-                    <Pencil className="w-3 h-3 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(item.id)}
-                    className="flex-1 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="w-3 h-3 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

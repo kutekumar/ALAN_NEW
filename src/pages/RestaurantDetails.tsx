@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Star, MapPin, Clock, Phone, Plus, Minus, ShoppingBag, UtensilsCrossed } from 'lucide-react';
-import { mockRestaurants, mockMenuItems } from '@/data/mockData';
+import { ArrowLeft, Star, MapPin, Clock, Phone, Plus, Minus, ShoppingBag, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CartItem {
   id: string;
@@ -15,17 +15,81 @@ interface CartItem {
   quantity: number;
 }
 
+interface Restaurant {
+  id: string;
+  name: string;
+  description: string | null;
+  cuisine_type: string | null;
+  address: string;
+  phone: string | null;
+  image_url: string | null;
+  rating: number | null;
+  distance: string | null;
+  open_hours: string | null;
+}
+
+interface MenuItem {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  available: boolean;
+}
+
 const RestaurantDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const restaurant = mockRestaurants.find(r => r.id === id);
-  const menuItems = id ? mockMenuItems[id] || [] : [];
-  
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<'dine_in' | 'takeaway'>('dine_in');
 
+  useEffect(() => {
+    if (id) {
+      fetchRestaurantAndMenu();
+    }
+  }, [id]);
+
+  const fetchRestaurantAndMenu = async () => {
+    try {
+      const [restaurantRes, menuRes] = await Promise.all([
+        supabase.from('restaurants').select('*').eq('id', id).single(),
+        supabase.from('menu_items').select('*').eq('restaurant_id', id).eq('available', true)
+      ]);
+
+      if (restaurantRes.error) throw restaurantRes.error;
+      if (menuRes.error) throw menuRes.error;
+
+      setRestaurant(restaurantRes.data);
+      setMenuItems(menuRes.data || []);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to load restaurant details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   if (!restaurant) {
-    return <div>Restaurant not found</div>;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Restaurant not found</h2>
+          <Button onClick={() => navigate('/home')}>Back to Home</Button>
+        </div>
+      </div>
+    );
   }
 
   const addToCart = (item: any) => {

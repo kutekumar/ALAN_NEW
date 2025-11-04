@@ -1,81 +1,68 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Camera, CameraOff, CheckCircle2, XCircle } from 'lucide-react';
+import { Camera, CheckCircle2, XCircle } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'sonner';
-
-interface ScannedOrder {
-  orderId: string;
-  customerName: string;
-  items: string[];
-  total: number;
-  type: string;
-}
+import { supabase } from '@/integrations/supabase/client';
 
 const QRScanner = () => {
   const [scanning, setScanning] = useState(false);
-  const [scannedOrder, setScannedOrder] = useState<ScannedOrder | null>(null);
+  const [scannedOrder, setScannedOrder] = useState<any | null>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
-  const scannerDivId = "qr-reader";
-
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear();
-      }
-    };
-  }, []);
+  const [verifying, setVerifying] = useState(false);
 
   const startScanning = () => {
     setScanning(true);
-    setScannedOrder(null);
-
-    // Initialize scanner
     const scanner = new Html5QrcodeScanner(
-      scannerDivId,
-      { 
-        fps: 10, 
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0
-      },
+      'qr-reader',
+      { fps: 10, qrbox: { width: 250, height: 250 } },
       false
     );
 
     scanner.render(
-      (decodedText) => {
-        // Parse QR code data
+      async (decodedText) => {
+        setVerifying(true);
         try {
-          const orderData = JSON.parse(decodedText);
-          setScannedOrder({
-            orderId: orderData.orderId || 'Unknown',
-            customerName: orderData.customerName || 'Guest',
-            items: orderData.items || [],
-            total: orderData.total || 0,
-            type: orderData.type || 'dine-in'
-          });
-          toast.success('QR Code scanned successfully!');
-          scanner.clear();
-          setScanning(false);
-        } catch (e) {
-          // If not JSON, treat as order ID
-          setScannedOrder({
-            orderId: decodedText,
-            customerName: 'Guest Customer',
-            items: ['Mock Item 1', 'Mock Item 2'],
-            total: 5000,
-            type: 'dine-in'
-          });
-          toast.success('QR Code scanned successfully!');
-          scanner.clear();
-          setScanning(false);
+          // Parse the QR code to get order ID
+          let orderId = decodedText;
+          try {
+            const parsed = JSON.parse(decodedText);
+            orderId = parsed.orderId || parsed.id || decodedText;
+          } catch {
+            // Use as is if not JSON
+          }
+
+          // Fetch the actual order from database
+          const { data, error } = await supabase
+            .from('orders')
+            .select(`
+              *,
+              profiles (full_name),
+              restaurants (name)
+            `)
+            .eq('qr_code', decodedText)
+            .single();
+
+          if (error) throw error;
+
+          if (!data) {
+            toast.error('Order not found');
+            return;
+          }
+
+          setScannedOrder(data);
+          toast.success('Order verified successfully!');
+          stopScanning();
+        } catch (error) {
+          console.error('Error verifying order:', error);
+          toast.error('Failed to verify order');
+        } finally {
+          setVerifying(false);
         }
       },
       (error) => {
-        // Ignore errors during scanning
-        console.log('Scanning...', error);
+        console.log(error);
       }
     );
 
@@ -85,100 +72,128 @@ const QRScanner = () => {
   const stopScanning = () => {
     if (scannerRef.current) {
       scannerRef.current.clear();
-      setScanning(false);
+      scannerRef.current = null;
     }
+    setScanning(false);
   };
 
-  const markAsServed = () => {
-    toast.success(`Order ${scannedOrder?.orderId} marked as served!`);
-    setScannedOrder(null);
+  const markAsServed = async () => {
+    if (!scannedOrder) return;
+
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'completed' })
+        .eq('id', scannedOrder.id);
+
+      if (error) throw error;
+
+      toast.success('Order marked as served!');
+      setScannedOrder(null);
+    } catch (error) {
+      console.error('Error updating order:', error);
+      toast.error('Failed to update order status');
+    }
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">QR Code Scanner</h2>
+        <h2 className="text-2xl font-bold text-foreground">QR Scanner</h2>
         <p className="text-muted-foreground">Scan customer booking QR codes</p>
       </div>
 
-      <Card className="border-border/50 luxury-shadow">
-        <CardHeader>
-          <CardTitle>Scanner</CardTitle>
-          <CardDescription>Point your camera at the customer's QR code</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!scanning && !scannedOrder && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <Camera className="w-16 h-16 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground text-center">
-                Click the button below to start scanning
+      {!scanning && !scannedOrder && (
+        <Card className="border-border/50 luxury-shadow">
+          <CardContent className="py-12 text-center space-y-4">
+            <Camera className="h-16 w-16 mx-auto text-primary" />
+            <div>
+              <h3 className="text-lg font-semibold mb-2">Ready to Scan</h3>
+              <p className="text-muted-foreground mb-4">
+                Click the button below to activate your camera and scan customer QR codes
               </p>
-              <Button onClick={startScanning} className="luxury-gradient">
-                <Camera className="w-4 h-4 mr-2" />
+              <Button onClick={startScanning} className="luxury-gradient" size="lg">
+                <Camera className="w-5 h-5 mr-2" />
                 Start Scanner
               </Button>
             </div>
-          )}
+          </CardContent>
+        </Card>
+      )}
 
-          {scanning && (
-            <div className="space-y-4">
-              <div id={scannerDivId} className="w-full"></div>
-              <Button onClick={stopScanning} variant="outline" className="w-full">
-                <CameraOff className="w-4 h-4 mr-2" />
-                Stop Scanner
+      {scanning && (
+        <Card className="border-border/50 luxury-shadow">
+          <CardHeader>
+            <CardTitle>Scanning...</CardTitle>
+            <CardDescription>Position the QR code within the frame</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div id="qr-reader" className="w-full"></div>
+            <Button onClick={stopScanning} variant="outline" className="w-full">
+              <XCircle className="w-4 h-4 mr-2" />
+              Stop Scanning
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {scannedOrder && (
+        <Card className="border-border/50 luxury-shadow">
+          <CardHeader>
+            <CardTitle className="text-xl">Order Details</CardTitle>
+            <CardDescription>
+              Order ID: {scannedOrder.id}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Customer:</span>
+                <span className="font-medium">{scannedOrder.profiles?.full_name || 'Customer'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Restaurant:</span>
+                <span className="font-medium">{scannedOrder.restaurants?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Order Type:</span>
+                <span className="font-medium capitalize">{scannedOrder.order_type.replace('_', ' ')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Status:</span>
+                <span className="font-medium capitalize">{scannedOrder.status}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-semibold">Items:</h4>
+              <ul className="space-y-1">
+                {scannedOrder.order_items.map((item: any, idx: number) => (
+                  <li key={idx} className="flex justify-between text-sm">
+                    <span>{item.quantity}x {item.name}</span>
+                    <span>{(item.price * item.quantity).toLocaleString()} MMK</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex justify-between pt-4 border-t">
+              <span className="font-semibold">Total:</span>
+              <span className="font-bold text-lg">{scannedOrder.total_amount.toLocaleString()} MMK</span>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button onClick={markAsServed} className="flex-1 luxury-gradient" size="lg">
+                <CheckCircle2 className="w-5 h-5 mr-2" />
+                Mark as Served
+              </Button>
+              <Button onClick={() => setScannedOrder(null)} variant="outline" className="flex-1" size="lg">
+                Scan Another
               </Button>
             </div>
-          )}
-
-          {scannedOrder && (
-            <div className="space-y-4">
-              <Alert className="border-green-500/50 bg-green-500/10">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-700 dark:text-green-400">
-                  QR Code successfully scanned!
-                </AlertDescription>
-              </Alert>
-
-              <Card className="border-primary/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    Order Details
-                    <Badge variant="outline">{scannedOrder.orderId}</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Customer</p>
-                    <p className="font-medium">{scannedOrder.customerName}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Type</p>
-                    <Badge>{scannedOrder.type}</Badge>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Items</p>
-                    <p className="font-medium">{scannedOrder.items.join(', ')}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Amount</p>
-                    <p className="text-lg font-bold text-primary">{scannedOrder.total} MMK</p>
-                  </div>
-
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={markAsServed} className="flex-1 luxury-gradient">
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      Mark as Served
-                    </Button>
-                    <Button onClick={() => setScannedOrder(null)} variant="outline" className="flex-1">
-                      Scan Another
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

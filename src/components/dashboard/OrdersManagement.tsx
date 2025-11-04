@@ -1,147 +1,207 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Clock, User, ShoppingBag, DollarSign } from 'lucide-react';
+import { Clock, User, ShoppingBag, UtensilsCrossed, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
-type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed';
+type OrderStatus = 'paid' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'served';
 
 interface Order {
   id: string;
-  customerName: string;
-  items: string[];
-  type: 'dine-in' | 'takeaway';
-  total: number;
+  customer_id: string;
+  restaurant_id: string;
+  order_items: any;
+  order_type: 'dine_in' | 'takeaway';
+  total_amount: number;
   status: OrderStatus;
-  time: string;
+  created_at: string;
+  profiles?: {
+    full_name: string;
+  };
 }
 
-const mockOrders: Order[] = [
-  {
-    id: 'ORD-001',
-    customerName: 'John Doe',
-    items: ['Mohinga', 'Tea'],
-    type: 'dine-in',
-    total: 4500,
-    status: 'pending',
-    time: '10:30 AM'
-  },
-  {
-    id: 'ORD-002',
-    customerName: 'Jane Smith',
-    items: ['Shan Noodles', 'Coffee'],
-    type: 'takeaway',
-    total: 5000,
-    status: 'preparing',
-    time: '10:45 AM'
-  },
-  {
-    id: 'ORD-003',
-    customerName: 'David Wilson',
-    items: ['Laphet Thoke', 'Fresh Lime Juice'],
-    type: 'dine-in',
-    total: 6000,
-    status: 'ready',
-    time: '11:00 AM'
-  }
-];
-
 const OrdersManagement = () => {
-  const [orders, setOrders] = useState<Order[]>(mockOrders);
+  const { user } = useAuth();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const updateOrderStatus = (orderId: string, newStatus: OrderStatus) => {
-    setOrders(orders.map(order =>
-      order.id === orderId ? { ...order, status: newStatus } : order
-    ));
+  useEffect(() => {
+    if (user) {
+      fetchOrders();
+    }
+  }, [user]);
+
+  const fetchOrders = async () => {
+    try {
+      // First get the restaurant owned by this user
+      const { data: restaurant, error: restaurantError } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('owner_id', user?.id)
+        .single();
+
+      if (restaurantError) throw restaurantError;
+
+      // Then get orders for this restaurant
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('restaurant_id', restaurant.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      // Fetch profile names separately
+      const ordersWithProfiles = await Promise.all(
+        (data || []).map(async (order) => {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', order.customer_id)
+            .single();
+          return { ...order, profiles: profile };
+        })
+      );
+      
+      setOrders(ordersWithProfiles as Order[]);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      toast.error('Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      setOrders(orders.map(order => 
+        order.id === orderId ? { ...order, status: newStatus } : order
+      ));
+      toast.success('Order status updated');
+    } catch (error) {
+      console.error('Error updating order:', error);
+      toast.error('Failed to update order status');
+    }
   };
 
   const getStatusBadge = (status: OrderStatus) => {
-    const variants = {
-      pending: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
-      preparing: 'bg-blue-500/20 text-blue-700 dark:text-blue-400',
-      ready: 'bg-green-500/20 text-green-700 dark:text-green-400',
-      completed: 'bg-gray-500/20 text-gray-700 dark:text-gray-400'
+    const badges = {
+      paid: { label: 'Paid', className: 'bg-purple-500/20 text-purple-700 dark:text-purple-400' },
+      preparing: { label: 'Preparing', className: 'bg-blue-500/20 text-blue-700 dark:text-blue-400' },
+      ready: { label: 'Ready', className: 'bg-green-500/20 text-green-700 dark:text-green-400' },
+      completed: { label: 'Completed', className: 'bg-gray-500/20 text-gray-700 dark:text-gray-400' },
+      cancelled: { label: 'Cancelled', className: 'bg-red-500/20 text-red-700 dark:text-red-400' },
+      served: { label: 'Served', className: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' }
     };
-    return variants[status];
+    return badges[status] || badges.paid;
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / 60000);
+    
+    if (diffInMinutes < 60) return `${diffInMinutes} mins ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Orders</h2>
-          <p className="text-muted-foreground">Manage customer orders</p>
-        </div>
-        <Badge variant="outline" className="text-lg px-4 py-2">
-          {orders.filter(o => o.status !== 'completed').length} Active
-        </Badge>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-foreground">Orders</h2>
+        <p className="text-muted-foreground">Manage incoming orders and update their status</p>
       </div>
 
-      <div className="grid gap-4">
-        {orders.map((order) => (
-          <Card key={order.id} className="border-border/50 luxury-shadow hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="flex items-center gap-2">
-                    {order.id}
-                    <Badge variant={order.type === 'dine-in' ? 'default' : 'secondary'}>
-                      {order.type === 'dine-in' ? 'Dine-in' : 'Takeaway'}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription className="flex items-center gap-4 text-sm">
-                    <span className="flex items-center gap-1">
-                      <User className="w-3 h-3" />
-                      {order.customerName}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {order.time}
-                    </span>
-                  </CardDescription>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : orders.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            No orders yet
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {orders.map((order) => (
+            <Card key={order.id} className="border-border/50 luxury-shadow">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <CardTitle className="text-lg">Order #{order.id.substring(0, 8)}</CardTitle>
+                  <Badge className={getStatusBadge(order.status).className}>
+                    {getStatusBadge(order.status).label}
+                  </Badge>
                 </div>
-                <Badge className={getStatusBadge(order.status)}>
-                  {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start gap-2">
-                  <ShoppingBag className="w-4 h-4 mt-1 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">Items:</p>
-                    <p className="text-sm text-muted-foreground">{order.items.join(', ')}</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User className="h-4 w-4" />
+                      <span>{order.profiles?.full_name || 'Customer'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      {order.order_type === 'dine_in' ? (
+                        <UtensilsCrossed className="h-4 w-4" />
+                      ) : (
+                        <ShoppingBag className="h-4 w-4" />
+                      )}
+                      <span>{order.order_type === 'dine_in' ? 'Dine In' : 'Takeaway'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <span>{formatTimeAgo(order.created_at)}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-border/50">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-primary" />
-                    <span className="text-lg font-bold text-foreground">{order.total} MMK</span>
-                  </div>
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Items:</h4>
+                  <ul className="space-y-1">
+                    {order.order_items.map((item: any, idx: number) => (
+                      <li key={idx} className="text-sm text-muted-foreground">
+                        {item.quantity}x {item.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <span className="font-semibold text-lg">
+                    Total: {order.total_amount.toLocaleString()} MMK
+                  </span>
                   <Select
                     value={order.status}
                     onValueChange={(value) => updateOrderStatus(order.id, value as OrderStatus)}
                   >
-                    <SelectTrigger className="w-[150px]">
+                    <SelectTrigger className="w-40">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
                       <SelectItem value="preparing">Preparing</SelectItem>
                       <SelectItem value="ready">Ready</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

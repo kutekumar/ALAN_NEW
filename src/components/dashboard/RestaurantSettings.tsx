@@ -1,25 +1,95 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Save, Upload } from 'lucide-react';
+import { Save, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const RestaurantSettings = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    name: 'Yangon Bistro',
-    address: '123 Main Street, Yangon',
-    phone: '+95 9 123 456 789',
-    description: 'Premium Myanmar cuisine with a modern twist. Experience authentic flavors in a luxurious setting.',
-    coverPhoto: '/placeholder.svg',
-    openHours: '9:00 AM - 10:00 PM'
+    name: '',
+    address: '',
+    phone: '',
+    description: '',
+    image_url: '',
+    open_hours: ''
   });
 
-  const handleSave = () => {
-    toast.success('Restaurant information updated successfully!');
+  useEffect(() => {
+    if (user) {
+      fetchRestaurantData();
+    }
+  }, [user]);
+
+  const fetchRestaurantData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('owner_id', user?.id)
+        .single();
+
+      if (error) throw error;
+
+      setRestaurantId(data.id);
+      setFormData({
+        name: data.name,
+        address: data.address,
+        phone: data.phone || '',
+        description: data.description || '',
+        image_url: data.image_url || '',
+        open_hours: data.open_hours || ''
+      });
+    } catch (error) {
+      console.error('Error fetching restaurant:', error);
+      toast.error('Failed to load restaurant data');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSave = async () => {
+    if (!restaurantId) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('restaurants')
+        .update({
+          name: formData.name,
+          address: formData.address,
+          phone: formData.phone,
+          description: formData.description,
+          image_url: formData.image_url,
+          open_hours: formData.open_hours
+        })
+        .eq('id', restaurantId);
+
+      if (error) throw error;
+      toast.success('Restaurant information updated successfully!');
+    } catch (error) {
+      console.error('Error updating restaurant:', error);
+      toast.error('Failed to update restaurant information');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -36,21 +106,23 @@ const RestaurantSettings = () => {
         <CardContent className="space-y-6">
           {/* Cover Photo */}
           <div className="space-y-2">
-            <Label>Cover Photo</Label>
-            <div className="relative h-48 bg-muted rounded-lg overflow-hidden">
-              <img
-                src={formData.coverPhoto}
-                alt="Restaurant cover"
-                className="w-full h-full object-cover"
+            <Label htmlFor="image_url">Cover Photo URL</Label>
+            <div className="space-y-2">
+              {formData.image_url && (
+                <div className="relative h-48 bg-muted rounded-lg overflow-hidden">
+                  <img
+                    src={formData.image_url}
+                    alt="Restaurant cover"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+              <Input
+                id="image_url"
+                value={formData.image_url}
+                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                placeholder="https://..."
               />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="absolute bottom-4 right-4"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload New
-              </Button>
             </div>
           </div>
 
@@ -87,11 +159,11 @@ const RestaurantSettings = () => {
 
           {/* Open Hours */}
           <div className="space-y-2">
-            <Label htmlFor="hours">Open Hours</Label>
+            <Label htmlFor="open_hours">Open Hours</Label>
             <Input
-              id="hours"
-              value={formData.openHours}
-              onChange={(e) => setFormData({ ...formData, openHours: e.target.value })}
+              id="open_hours"
+              value={formData.open_hours}
+              onChange={(e) => setFormData({ ...formData, open_hours: e.target.value })}
               placeholder="9:00 AM - 10:00 PM"
             />
           </div>
