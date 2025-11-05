@@ -18,7 +18,9 @@ const Auth = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user && userRole) {
-      if (userRole === 'restaurant_owner' || userRole === 'admin') {
+      if (userRole === 'admin') {
+        navigate('/admin');
+      } else if (userRole === 'restaurant_owner') {
         navigate('/dashboard');
       } else {
         navigate('/home');

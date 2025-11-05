@@ -119,3 +119,27 @@ All colors MUST be HSL.
     background: linear-gradient(135deg, hsl(43 72% 52%), hsl(43 72% 40%));
   }
 }
+
+/* Print styles for reports */
+@media print {
+  @page {
+    margin: 1cm;
+  }
+  
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  .print\:block {
+    display: block !important;
+  }
+  
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+}
