@@ -31,46 +31,32 @@ const Orders = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Fetch database orders
-      let dbOrders: any[] = [];
-      if (user) {
-        const { data, error } = await supabase
-          .from('orders')
-          .select(`
-            *,
-            restaurants (
-              name,
-              image_url,
-              address
-            )
-          `)
-          .eq('customer_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (!error && data) {
-          dbOrders = data;
-        }
+      if (!user) {
+        toast.error('Please sign in to view your orders');
+        setLoading(false);
+        return;
       }
 
-      // Fetch mock orders from localStorage
-      const mockOrders = JSON.parse(localStorage.getItem('mockOrders') || '[]');
-      
-      // Transform mock orders to match database format
-      const transformedMockOrders = mockOrders.map((order: any) => ({
-        ...order,
-        restaurants: order.restaurant ? {
-          name: order.restaurant.name,
-          image_url: order.restaurant.image,
-          address: order.restaurant.address
-        } : null
-      }));
+      // Fetch orders from database for current user only
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          restaurants (
+            name,
+            image_url,
+            address
+          )
+        `)
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false });
 
-      // Combine and sort all orders
-      const allOrders = [...dbOrders, ...transformedMockOrders].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      if (error) {
+        console.error('Error fetching orders:', error);
+        toast.error('Failed to load orders');
+      }
 
-      setOrders(allOrders);
+      setOrders(data || []);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
       toast.error('Failed to load orders');
