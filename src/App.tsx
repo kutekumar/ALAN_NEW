@@ -13,6 +13,11 @@ import Confirmation from "./pages/Confirmation";
 import Orders from "./pages/Orders";
 import Profile from "./pages/Profile";
 import RestaurantDashboard from "./pages/dashboard/RestaurantDashboard";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminRestaurants from "./pages/admin/AdminRestaurants";
+import AdminOwners from "./pages/admin/AdminOwners";
+import AdminOrders from "./pages/admin/AdminOrders";
+import AdminUsers from "./pages/admin/AdminUsers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +39,11 @@ const App = () => (
             <Route path="/orders" element={<Orders />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/dashboard" element={<RestaurantDashboard />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/restaurants" element={<AdminRestaurants />} />
+            <Route path="/admin/owners" element={<AdminOwners />} />
+            <Route path="/admin/orders" element={<AdminOrders />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
