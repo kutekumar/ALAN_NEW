@@ -23,6 +23,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useCustomerLoyalty } from '@/hooks/useCustomerLoyalty';
+import CircularRestaurantGallery from '@/components/CircularRestaurantGallery';
 
 interface Restaurant {
   id: string;
@@ -486,8 +487,18 @@ const Home = () => {
                 Close
               </button>
             </div>
-            <div className="text-[9px] text-muted-foreground/80">
-              {new Date(selectedNotification.created_at).toLocaleString()}
+            <div className="text-[9px] text-muted-foreground/80 text-right">
+              {(() => {
+                const d = new Date(selectedNotification.created_at);
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                let hours = d.getHours();
+                const minutes = String(d.getMinutes()).padStart(2, '0');
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                hours = hours % 12 || 12;
+                return `${day}/${month}/${year} - ${hours}:${minutes} ${ampm}`;
+              })()}
             </div>
             <div className="mt-1 text-[10px] leading-relaxed text-foreground whitespace-pre-line">
               {selectedNotification.message}
@@ -496,13 +507,14 @@ const Home = () => {
         </div>
       )}
 
-      {/* Welcome + Search + Restaurant List */}
+      {/* Welcome + Search + Circular Gallery + Restaurant List */}
       <div className="max-w-md mx-auto px-6 py-6 space-y-4">
         <div className="space-y-3">
           <h2 className="text-xl font-semibold">
-            {getGreeting()}, <span className="font-bold text-yellow-500">{displayName}</span>
+            {getGreeting()},{' '}
+            <span className="font-bold text-yellow-500">{displayName}</span>
           </h2>
-          {/* Search moved below greeting */}
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
@@ -513,6 +525,25 @@ const Home = () => {
             />
           </div>
         </div>
+
+        {/* Circular top restaurants gallery */}
+        {!loading && filteredRestaurants.length > 0 && (
+          <CircularRestaurantGallery
+            restaurants={[...filteredRestaurants]
+              .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+              .slice(0, 10)
+              .map((r) => ({
+                id: r.id,
+                image: r.image_url,
+                title: r.name,
+              }))}
+            bend={3}
+            textColor="#e5e5e5"
+            borderRadius={0.35}
+            scrollEase={0.06}
+          />
+        )}
+
         {loading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -523,44 +554,48 @@ const Home = () => {
           </div>
         ) : (
           filteredRestaurants.map((restaurant) => (
-          <Card
-            key={restaurant.id}
-            className="overflow-hidden cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
-            onClick={() => navigate(`/restaurant/${restaurant.id}`)}
-          >
-            <div className="relative h-48">
-              <img
-                src={restaurant.image_url}
-                alt={restaurant.name}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-3 right-3">
-                <Badge className="bg-primary text-primary-foreground border-0">
-                  <Star className="h-3 w-3 mr-1 fill-current" />
-                  {restaurant.rating}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="p-4 space-y-2">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg text-foreground">{restaurant.name}</h3>
-                  <p className="text-sm text-muted-foreground">{restaurant.description}</p>
+            <Card
+              key={restaurant.id}
+              className="overflow-hidden cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
+              onClick={() => navigate(`/restaurant/${restaurant.id}`)}
+            >
+              <div className="relative h-48">
+                <img
+                  src={restaurant.image_url}
+                  alt={restaurant.name}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-3 right-3">
+                  <Badge className="bg-primary text-primary-foreground border-0">
+                    <Star className="h-3 w-3 mr-1 fill-current" />
+                    {restaurant.rating}
+                  </Badge>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <Badge variant="secondary" className="font-normal">
-                  {restaurant.cuisine_type}
-                </Badge>
-                <div className="flex items-center gap-1 text-[0.625rem]">
-                  <MapPin className="h-3 w-3" />
-                  {restaurant.address}
+              <div className="p-4 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg text-foreground">
+                      {restaurant.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {restaurant.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <Badge variant="secondary" className="font-normal">
+                    {restaurant.cuisine_type}
+                  </Badge>
+                  <div className="flex items-center gap-1 text-[0.625rem]">
+                    <MapPin className="h-3 w-3" />
+                    {restaurant.address}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
           ))
         )}
       </div>

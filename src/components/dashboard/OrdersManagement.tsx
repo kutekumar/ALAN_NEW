@@ -88,6 +88,8 @@ const OrdersManagement = () => {
     }
   };
 
+  // Expose a stable updater so external actions (like the notification modal)
+  // can trigger an in-memory update via window.dispatchEvent.
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     try {
       const { error } = await supabase
@@ -97,9 +99,11 @@ const OrdersManagement = () => {
 
       if (error) throw error;
 
-      setOrders(orders.map(order =>
-        order.id === orderId ? { ...order, status: newStatus } : order
-      ));
+      setOrders(prev =>
+        prev.map(order =>
+          order.id === orderId ? { ...order, status: newStatus } : order
+        )
+      );
       toast.success('Order status updated');
 
       // Loyalty + notification logic is handled in DB trigger:
@@ -111,6 +115,29 @@ const OrdersManagement = () => {
       toast.error('Failed to update order status');
     }
   };
+
+  // Listen for status updates coming from other parts of the app (e.g., notification modal)
+  // so OrdersManagement reflects changes without a full page reload.
+  // Event is dispatched as: window.dispatchEvent(new CustomEvent('orderStatusUpdated', { detail: { orderId, status } }))
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ orderId: string; status: OrderStatus }>;
+      const { orderId, status } = custom.detail || ({} as any);
+      if (!orderId || !status) return;
+
+      setOrders(prev =>
+        prev.map(order =>
+          order.id === orderId ? { ...order, status } : order
+        )
+      );
+    };
+
+    window.addEventListener('orderStatusUpdated', handler as EventListener);
+
+    return () => {
+      window.removeEventListener('orderStatusUpdated', handler as EventListener);
+    };
+  }, []);
 
   const clearFilters = () => {
     setTypeFilter('all');
@@ -362,7 +389,17 @@ const OrdersManagement = () => {
                            <span>{formatTimeAgo(order.created_at)}</span>
                          </div>
                          <div className="text-[8px] text-muted-foreground/80">
-                           {new Date(order.created_at).toLocaleString()}
+                           {(() => {
+                             const d = new Date(order.created_at);
+                             const day = String(d.getDate()).padStart(2, '0');
+                             const month = String(d.getMonth() + 1).padStart(2, '0');
+                             const year = d.getFullYear();
+                             let hours = d.getHours();
+                             const minutes = String(d.getMinutes()).padStart(2, '0');
+                             const ampm = hours >= 12 ? 'PM' : 'AM';
+                             hours = hours % 12 || 12;
+                             return `${day}/${month}/${year} - ${hours}:${minutes} ${ampm}`;
+                           })()}
                          </div>
                        </div>
                      </div>

@@ -72,7 +72,9 @@ const RestaurantDashboard = () => {
     // Lazy-load specific order details for modal
     try {
       const { supabase } = await import('@/integrations/supabase/client');
-      const { data, error } = await supabase
+
+      // 1) Fetch the order
+      const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .select(
           `
@@ -82,19 +84,53 @@ const RestaurantDashboard = () => {
           status,
           created_at,
           order_type,
-          customer_id,
-          profiles!left(full_name, phone)
+          customer_id
         `
         )
         .eq('id', notification.order_id)
         .single();
 
-      if (error) {
-        console.error('Failed to load order detail for notification:', error);
+      if (orderError || !orderData) {
+        console.error('Failed to load order detail for notification:', orderError);
         return;
       }
 
-      setOrderDetail(data);
+      // 2) Fetch customer profile exactly like OrdersManagement does (get_order_customers)
+      let customerName: string | null = null;
+      let customerPhone: string | null = null;
+
+      if (orderData.customer_id) {
+        const { data: customers, error: customersError } = await supabase.rpc(
+          'get_order_customers',
+          { customer_ids: [orderData.customer_id] }
+        );
+
+        if (customersError) {
+          console.error('Failed to load customer details for modal:', customersError);
+        } else if (customers && customers.length > 0) {
+          const customer = customers[0];
+          customerName =
+            (customer.full_name && String(customer.full_name).trim()) || null;
+          customerPhone =
+            (customer.phone && String(customer.phone).trim()) || null;
+        }
+      }
+
+      // 3) Also respect enriched name from notification if present
+      if (
+        !customerName &&
+        notification.customer_name &&
+        typeof notification.customer_name === 'string' &&
+        notification.customer_name.trim()
+      ) {
+        customerName = notification.customer_name.trim();
+      }
+
+      setOrderDetail({
+        ...orderData,
+        customer_display_name: customerName,
+        customer_display_phone: customerPhone,
+      });
     } catch (err) {
       console.error('Error loading order detail module:', err);
     }
@@ -209,8 +245,18 @@ const RestaurantDashboard = () => {
                                 {title}
                               </div>
                             </div>
-                            <div className="mt-0.5 text-[9px] text-muted-foreground">
-                              {new Date(n.created_at).toLocaleString()}
+                            <div className="mt-0.5 text-[9px] text-muted-foreground text-right">
+                              {(() => {
+                                const d = new Date(n.created_at);
+                                const day = String(d.getDate()).padStart(2, '0');
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const year = d.getFullYear();
+                                let hours = d.getHours();
+                                const minutes = String(d.getMinutes()).padStart(2, '0');
+                                const ampm = hours >= 12 ? 'PM' : 'AM';
+                                hours = hours % 12 || 12;
+                                return `${day}/${month}/${year} - ${hours}:${minutes} ${ampm}`;
+                              })()}
                             </div>
                           </div>
                         </DropdownMenuItem>
@@ -257,32 +303,91 @@ const RestaurantDashboard = () => {
               </div>
             ) : (
               <div className="space-y-3 text-sm">
+                {/* Order ID */}
                 <div className="flex justify-between">
                   <span className="font-medium">Order ID</span>
                   <span className="font-mono text-xs">
                     {String(orderDetail.id).substring(0, 8)}
                   </span>
                 </div>
+
+                {/* Customer info: use same mechanism as OrdersManagement (get_order_customers) */}
                 <div className="flex justify-between">
                   <span className="font-medium">Customer</span>
                   <span>
-                    {orderDetail.profiles?.full_name || 'Customer'}
-                    {orderDetail.profiles?.phone
-                      ? ` • ${orderDetail.profiles.phone}`
-                      : ''}
+                    {(() => {
+                      const name =
+                        (orderDetail.customer_display_name &&
+                          String(orderDetail.customer_display_name).trim()) ||
+                        null;
+                      const phone =
+                        (orderDetail.customer_display_phone &&
+                          String(orderDetail.customer_display_phone).trim()) ||
+                        null;
+
+                      if (name && phone) return `${name} • ${phone}`;
+                      if (name) return name;
+                      if (phone) return phone;
+
+                      // If everything fails, neutral fallback:
+                      return 'Customer';
+                    })()}
                   </span>
                 </div>
+
+                {/* Total */}
                 <div className="flex justify-between">
                   <span className="font-medium">Total Amount</span>
                   <span className="font-semibold">
                     {Number(orderDetail.total_amount || 0).toLocaleString()} MMK
                   </span>
                 </div>
-                <div className="flex justify-between">
+
+                {/* Status with inline updater that syncs Orders list */}
+                <div className="flex justify-between items-center gap-3">
                   <span className="font-medium">Status</span>
-                  <span className="capitalize">
-                    {orderDetail.status || 'pending'}
-                  </span>
+                  <select
+                    className="text-xs px-2 py-1 border border-border rounded-md bg-background capitalize"
+                    value={orderDetail.status || 'paid'}
+                    onChange={async (e) => {
+                      const newStatus = e.target.value;
+                      try {
+                        const { supabase } = await import('@/integrations/supabase/client');
+                        const { error } = await supabase
+                          .from('orders')
+                          .update({ status: newStatus })
+                          .eq('id', orderDetail.id);
+
+                        if (error) {
+                          console.error('Failed to update order status from modal:', error);
+                          return;
+                        }
+
+                        // Update local modal state so UI reflects change
+                        setOrderDetail((prev: any) =>
+                          prev ? { ...prev, status: newStatus } : prev
+                        );
+
+                        // Broadcast to OrdersManagement so it updates in-memory without reload
+                        if (typeof window !== 'undefined') {
+                          window.dispatchEvent(
+                            new CustomEvent('orderStatusUpdated', {
+                              detail: { orderId: orderDetail.id, status: newStatus },
+                            })
+                          );
+                        }
+                      } catch (err) {
+                        console.error('Error updating order status from modal:', err);
+                      }
+                    }}
+                  >
+                    <option value="paid">Paid</option>
+                    <option value="preparing">Preparing</option>
+                    <option value="ready">Ready</option>
+                    <option value="served">Served</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Type</span>
@@ -294,7 +399,17 @@ const RestaurantDashboard = () => {
                   <span className="font-medium">Placed At</span>
                   <div className="text-xs text-muted-foreground">
                     {orderDetail.created_at
-                      ? new Date(orderDetail.created_at).toLocaleString()
+                      ? (() => {
+                          const d = new Date(orderDetail.created_at);
+                          const day = String(d.getDate()).padStart(2, '0');
+                          const month = String(d.getMonth() + 1).padStart(2, '0');
+                          const year = d.getFullYear();
+                          let hours = d.getHours();
+                          const minutes = String(d.getMinutes()).padStart(2, '0');
+                          const ampm = hours >= 12 ? 'PM' : 'AM';
+                          hours = hours % 12 || 12;
+                          return `${day}/${month}/${year} - ${hours}:${minutes} ${ampm}`;
+                        })()
                       : ''}
                   </div>
                 </div>
