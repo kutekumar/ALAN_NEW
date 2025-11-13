@@ -32,10 +32,10 @@ interface UseOrderNotificationsOptions {
 
 /**
  * Simple in-memory audio loader for notification sound.
- * You can replace the URL with your own sound file in public/ or assets.
+ * Uses public/sound/notification.mp3 so it works in production build.
  */
 const getNotificationAudio = () => {
-  const audio = new Audio('/notification.mp3');
+  const audio = new Audio('/sound/notification.mp3');
   audio.preload = 'auto';
   return audio;
 };
@@ -59,11 +59,22 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
 
   const playSound = useCallback(() => {
     if (!enableSound) return;
+
     try {
       const audio = getNotificationAudio();
-      audio.play().catch(() => {
-        // Ignore autoplay restrictions silently
-      });
+
+      // If tab is hidden, try to ensure the sound is still attempted.
+      // Many browsers allow audio if the user has interacted with the site before.
+      const attemptPlay = () => {
+        audio.currentTime = 0;
+        audio.play().catch(() => {
+          // Autoplay restrictions: we silently ignore, but owner
+          // will still get sound once they interact again.
+        });
+      };
+
+      // Always attempt play; Page Visibility API is only advisory here.
+      attemptPlay();
     } catch {
       // no-op
     }

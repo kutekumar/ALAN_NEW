@@ -11,12 +11,14 @@ import {
   Settings,
   Bell,
   BellDot,
-  CheckCircle2
+  CheckCircle2,
+  BookOpenText
 } from 'lucide-react';
 import OrdersManagement from '@/components/dashboard/OrdersManagement';
 import QRScanner from '@/components/dashboard/QRScanner';
 import MenuManagement from '@/components/dashboard/MenuManagement';
 import RestaurantSettings from '@/components/dashboard/RestaurantSettings';
+import RestaurantBlogManagement from '@/components/dashboard/RestaurantBlogManagement';
 import { useOrderNotifications } from '@/hooks/useOrderNotifications';
 import {
   DropdownMenu,
@@ -38,7 +40,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 const RestaurantDashboard = () => {
   const { signOut } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'orders' | 'scanner' | 'menu' | 'settings'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'scanner' | 'menu' | 'blog' | 'settings'>('orders');
 
   const {
     restaurantId,
@@ -172,7 +174,7 @@ const RestaurantDashboard = () => {
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="w-[360px] max-h-[420px] p-0 overflow-hidden"
+                className="w-[320px] max-h-[420px] p-0 overflow-hidden"
               >
                 <DropdownMenuLabel className="flex items-center justify-between px-3 py-2">
                   <div className="flex flex-col">
@@ -199,70 +201,86 @@ const RestaurantDashboard = () => {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {/* Scroll vertically, never cut off lower items */}
+                {/* Scrollable notification list with hidden scrollbar (drag/scroll like customer UI) */}
+                {/* Scrollable notification list, styled like customer notifications.
+                    - Uses ScrollArea to constrain height
+                    - Inner div overflow-y-auto for scrolling
+                    - no-scrollbar hides the scrollbar handle while keeping scroll behavior */}
                 <ScrollArea className="max-h-[340px]">
-                  {notifications.length === 0 ? (
-                    <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                      You will see new orders here in real time.
-                    </div>
-                  ) : (
-                    notifications.map((n) => {
-                      const title =
-                        n.customer_name && n.total_amount
-                          ? `${n.customer_name} placed an order of ${Number(
-                              n.total_amount
-                            ).toLocaleString()} MMK`
-                          : n.message || 'New order received';
+                  <div className="max-h-[340px] overflow-y-auto no-scrollbar">
+                    {notifications.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-[10px] text-muted-foreground">
+                        You will see new orders here in real time.
+                      </div>
+                    ) : (
+                      notifications.map((n) => {
+                        const title =
+                          n.message && n.message.trim().length > 0
+                            ? n.message
+                            : n.customer_name && n.total_amount
+                            ? `${n.customer_name} placed an order of ${Number(
+                                n.total_amount
+                              ).toLocaleString()} MMK`
+                            : 'New order received';
 
-                      return (
-                        <DropdownMenuItem
-                          key={n.id}
-                          className={`flex items-start gap-3 px-4 py-3 cursor-pointer ${
-                            n.status === 'unread'
-                              ? 'bg-primary/5 hover:bg-primary/10'
-                              : 'hover:bg-muted/60'
-                          }`}
-                          onClick={() => handleOpenNotificationOrder(n)}
-                        >
-                          {/* Left icon: red dot for unread, outlined circle for read */}
-                          <div className="mt-1">
-                            {n.status === 'unread' ? (
-                              <span className="w-2.5 h-2.5 rounded-full bg-red-500 block" />
-                            ) : (
-                              <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
-                            )}
-                          </div>
+                        return (
+                          <DropdownMenuItem
+                            key={n.id}
+                            onClick={() => handleOpenNotificationOrder(n)}
+                            className={`
+                              w-full px-3 py-2.5 flex items-start gap-2
+                              cursor-pointer transition-colors
+                              ${
+                                n.status === 'unread'
+                                  ? 'bg-primary/5 hover:bg-primary/10'
+                                  : 'hover:bg-accent/40'
+                              }
+                            `}
+                          >
+                            {/* Read/unread indicator - match customer style */}
+                            <div className="mt-1 w-2 h-2 flex-shrink-0">
+                              {n.status === 'unread' ? (
+                                <span className="block w-2 h-2 rounded-full bg-red-500" />
+                              ) : (
+                                <span className="block w-2 h-2 rounded-full border border-emerald-500 bg-emerald-500/0 relative">
+                                  <span className="absolute inset-[2px] bg-emerald-500 rounded-full" />
+                                </span>
+                              )}
+                            </div>
 
-                          {/* Text content */}
-                          <div className="flex-1 min-w-0 pr-2">
-                            <div className="flex-1">
+                            {/* Text block */}
+                            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                               <div
-                                className={`text-xs ${
-                                  n.status === 'unread'
-                                    ? 'font-semibold text-foreground'
-                                    : 'font-normal text-foreground'
-                                }`}
+                                className={`
+                                  text-[9px] text-left
+                                  ${
+                                    n.status === 'unread'
+                                      ? 'font-semibold text-foreground'
+                                      : 'font-normal text-foreground'
+                                  }
+                                `}
                               >
                                 {title}
                               </div>
+                              <div className="text-[8px] text-muted-foreground/70 text-right">
+                                {(() => {
+                                  const d = new Date(n.created_at);
+                                  const day = String(d.getDate()).padStart(2, '0');
+                                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                                  const year = d.getFullYear();
+                                  let hours = d.getHours();
+                                  const minutes = String(d.getMinutes()).padStart(2, '0');
+                                  const ampm = hours >= 12 ? 'PM' : 'AM';
+                                  hours = hours % 12 || 12;
+                                  return `${day}/${month}/${year} ${hours}:${minutes} ${ampm}`;
+                                })()}
+                              </div>
                             </div>
-                            <div className="mt-0.5 text-[9px] text-muted-foreground text-right">
-                              {(() => {
-                                const d = new Date(n.created_at);
-                                const day = String(d.getDate()).padStart(2, '0');
-                                const month = String(d.getMonth() + 1).padStart(2, '0');
-                                const year = d.getFullYear();
-                                let hours = d.getHours();
-                                const minutes = String(d.getMinutes()).padStart(2, '0');
-                                const ampm = hours >= 12 ? 'PM' : 'AM';
-                                hours = hours % 12 || 12;
-                                return `${day}/${month}/${year} - ${hours}:${minutes} ${ampm}`;
-                              })()}
-                            </div>
-                          </div>
-                        </DropdownMenuItem>
-                      );
-                    })
-                  )}
+                          </DropdownMenuItem>
+                        );
+                      })
+                    )}
+                  </div>
                 </ScrollArea>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -286,6 +304,7 @@ const RestaurantDashboard = () => {
         {activeTab === 'orders' && <OrdersManagement />}
         {activeTab === 'scanner' && <QRScanner />}
         {activeTab === 'menu' && <MenuManagement />}
+        {activeTab === 'blog' && <RestaurantBlogManagement />}
         {activeTab === 'settings' && <RestaurantSettings />}
 
         {/* Order Detail Modal for notifications */}
@@ -473,6 +492,16 @@ const RestaurantDashboard = () => {
           >
             <LayoutList className="h-5 w-5 mb-1" />
             <span className="text-xs font-medium">Menu</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('blog')}
+            className={`flex flex-col items-center justify-center flex-1 transition-colors ${
+              activeTab === 'blog' ? 'text-primary' : 'text-muted-foreground'
+            }`}
+          >
+            <BookOpenText className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">Blog</span>
           </button>
 
           <button
