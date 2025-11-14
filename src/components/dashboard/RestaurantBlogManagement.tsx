@@ -32,6 +32,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RestaurantBlogPostDetail } from "./RestaurantBlogPostDetail";
 
 type MenuItem = {
   id: string;
@@ -84,6 +85,7 @@ const RestaurantBlogManagement = () => {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -467,35 +469,57 @@ const RestaurantBlogManagement = () => {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2">
-            <BookOpenText className="w-4 h-4 text-primary" />
-            <span className="text-[10px] uppercase tracking-[0.16em] text-primary/80">
-              Blog & Promotions Studio
-            </span>
+      {selectedPost ? (
+        <RestaurantBlogPostDetail
+          post={selectedPost}
+          onBack={() => setSelectedPost(null)}
+          onEdit={(post) => {
+            setSelectedPost(null);
+            openEdit(post);
+          }}
+          onDelete={(postId) => {
+            setSelectedPost(null);
+            handleDelete(postId);
+          }}
+          onTogglePin={(post) => {
+            handleTogglePin(post);
+            // Update the selected post if it's still open
+            if (selectedPost && selectedPost.id === post.id) {
+              setSelectedPost(post);
+            }
+          }}
+        />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2">
+                <BookOpenText className="w-4 h-4 text-primary" />
+                <span className="text-[10px] uppercase tracking-[0.16em] text-primary/80">
+                  Blog & Promotions Studio
+                </span>
+              </div>
+              <h2 className="text-xl font-semibold text-foreground leading-tight">
+                Tell your food story
+              </h2>
+              <p className="text-[11px] text-muted-foreground max-w-md">
+                Create minimalist, elegant posts to highlight your signature dishes,
+                seasonal menus, and special offers. Customers read these on the Blog tab.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="gap-2 rounded-full bg-primary/90 hover:bg-primary shadow-sm"
+              onClick={openCreate}
+            >
+              <Plus className="w-3 h-3" />
+              <span className="text-[10px] font-medium">New Post</span>
+            </Button>
           </div>
-          <h2 className="text-xl font-semibold text-foreground leading-tight">
-            Tell your food story
-          </h2>
-          <p className="text-[11px] text-muted-foreground max-w-md">
-            Create minimalist, elegant posts to highlight your signature dishes,
-            seasonal menus, and special offers. Customers read these on the Blog tab.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          className="gap-2 rounded-full bg-primary/90 hover:bg-primary shadow-sm"
-          onClick={openCreate}
-        >
-          <Plus className="w-3 h-3" />
-          <span className="text-[10px] font-medium">New Post</span>
-        </Button>
-      </div>
 
-      {/* Existing posts */}
-      <div className="space-y-3">
+          {/* Existing posts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {posts.length === 0 && (
           <Card className="p-4 bg-card/80 border-dashed border-border/60">
             <p className="text-[11px] text-muted-foreground">
@@ -509,9 +533,10 @@ const RestaurantBlogManagement = () => {
           <Card
             key={post.id}
             className={cn(
-              "relative overflow-hidden bg-card/90 border-border/40 group",
+              "relative overflow-hidden bg-card/90 border-border/40 group cursor-pointer",
               "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
             )}
+            onClick={() => setSelectedPost(post)}
           >
             {post.is_pinned && (
               <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-primary via-amber-400 to-primary/70" />
@@ -656,6 +681,8 @@ const RestaurantBlogManagement = () => {
           </Card>
         ))}
       </div>
+      </>
+      )}
 
       {/* Editor Dialog */}
       <Dialog

@@ -69,6 +69,9 @@ create table if not exists public.blog_comments (
   blog_post_id uuid not null references public.blog_posts(id) on delete cascade,
   customer_id uuid not null references auth.users(id) on delete cascade,
   content text not null,
+  -- Support for replies to comments
+  parent_comment_id uuid references public.blog_comments(id) on delete cascade,
+  is_reply boolean not null default false,
   -- Soft moderation flags without deleting data
   is_edited boolean not null default false,
   is_deleted boolean not null default false,

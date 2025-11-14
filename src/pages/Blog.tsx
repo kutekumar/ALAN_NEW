@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BottomNav } from '@/components/BottomNav';
-import { MessageCircle, ArrowRight, Sparkles, Clock, ChevronDown } from 'lucide-react';
+import { MessageCircle, ArrowRight, Sparkles, Clock, ChevronDown, User as UserIcon, Star } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+import { useCustomerLoyalty } from '@/hooks/useCustomerLoyalty';
 import { cn } from '@/lib/utils';
 
 type BlogPost = {
@@ -37,14 +40,17 @@ type BlogComment = {
   content: string;
   created_at: string;
   is_deleted: boolean;
-  profiles?: {
-    full_name: string | null;
-    avatar_url?: string | null;
-  };
+  parent_comment_id?: string | null;
+  customer_name?: string | null;
+  customer_email?: string | null;
+  avatar_url?: string | null;
+  display_name?: string;
 };
 
 const Blog = () => {
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+  const { loading: loyaltyLoading, summary, badgeLabel, badgeIcon } = useCustomerLoyalty();
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [comments, setComments] = useState<Record<string, BlogComment[]>>({});
   const [expandedPostIds, setExpandedPostIds] = useState<Set<string>>(new Set());
@@ -54,6 +60,7 @@ const Blog = () => {
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
   const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
 
   useEffect(() => {
     const init = async () => {
@@ -144,21 +151,33 @@ const Blog = () => {
     try {
       setLoadingComments((prev) => ({ ...prev, [postId]: true }));
 
-      // After running supabase/config-blog-comments-profiles.sql,
-      // blog_comments.customer_id -> profiles.id FK exists and this relationship is valid.
-      const { data, error } = await supabase
-        .from('blog_comments')
-        .select(
-          `
-          *,
-          profiles:customer_id (
-            full_name
-          )
-        `
-        )
+      // Use the view that has correct profile data
+      let { data, error } = await supabase
+        .from('blog_comments_with_profiles')
+        .select('*')
         .eq('blog_post_id', postId)
-        .eq('is_deleted', false)
         .order('created_at', { ascending: true });
+
+      // If the view doesn't exist or fails, fall back to the original query
+      if (error) {
+        console.warn('View query failed, trying original approach:', error);
+        const fallbackResult = await supabase
+          .from('blog_comments')
+          .select(
+            `
+            *,
+            profiles:customer_id (
+              full_name
+            )
+            `
+          )
+          .eq('blog_post_id', postId)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: true });
+        
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+      }
 
       if (error) {
         console.error('Error loading comments', error);
@@ -197,6 +216,11 @@ const Blog = () => {
         return;
       }
 
+      // Force refresh to get proper profile data
+      setTimeout(() => {
+        fetchComments(postId);
+      }, 100); // Small delay to ensure database write is complete
+      
       setComments((prev) => {
         const existing = prev[postId] || [];
         return {
@@ -229,6 +253,7 @@ const Blog = () => {
       setSubmittingComment((prev) => ({ ...prev, [postId]: false }));
     }
   };
+
 
   const renderPostSkeleton = () => (
     <Card className="p-4 space-y-3 bg-card/60 backdrop-blur-sm border-border/40 animate-pulse">
@@ -264,16 +289,19 @@ const Blog = () => {
               Discover promotions, new menus, and behind-the-scenes stories from all our partners.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full border-border/70 hover:bg-primary/5"
-            onClick={fetchPosts}
-          >
-            <ArrowRight className="w-4 h-4 rotate-90" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full border-border/70 hover:bg-primary/5"
+              onClick={fetchPosts}
+            >
+              <ArrowRight className="w-4 h-4 rotate-90" />
+            </Button>
+          </div>
         </div>
       </div>
+
 
       {/* Content */}
       <div className="max-w-md mx-auto px-5 pt-4 pb-4 space-y-4">
@@ -307,6 +335,7 @@ const Blog = () => {
             return (
               <Card
                 key={post.id}
+                id={`blog-post-${post.id}`}
                 className={cn(
                   'group relative overflow-hidden border-border/40 bg-card/90 backdrop-blur-md transition-all duration-300',
                   'hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(15,23,42,0.12)]'
@@ -354,7 +383,10 @@ const Blog = () => {
 
                   {/* Hero image */}
                   {post.hero_image_url && (
-                    <div className="mt-1 overflow-hidden rounded-xl border border-border/40 bg-muted/40">
+                    <div
+                      className="mt-1 overflow-hidden rounded-xl border border-border/40 bg-muted/40 cursor-pointer"
+                      onClick={() => toggleContentExpand(post.id)}
+                    >
                       <img
                         src={post.hero_image_url}
                         alt={post.title}
@@ -364,16 +396,19 @@ const Blog = () => {
                   )}
 
                   {/* Title + Content (expandable) */}
-                  <div className="space-y-1">
-                    <h2 className="text-base font-semibold text-foreground leading-snug">
+                  <div
+                    className="space-y-1 cursor-pointer"
+                    onClick={() => toggleContentExpand(post.id)}
+                  >
+                    <h2 className="text-base font-semibold text-foreground leading-relaxed">
                       {post.title}
                     </h2>
                     {expandedContentPostIds.has(post.id) ? (
-                      <p className="text-[11px] text-muted-foreground font-sans whitespace-pre-line leading-relaxed">
+                      <p className="text-[11px] text-muted-foreground font-sans whitespace-pre-line leading-loose">
                         {post.content}
                       </p>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground font-sans line-clamp-3 leading-relaxed">
+                      <p className="text-[11px] text-muted-foreground font-sans line-clamp-3 leading-loose">
                         {post.excerpt ||
                           post.content
                             .slice(0, 180)
@@ -446,12 +481,11 @@ const Blog = () => {
                     )}
 
                     {!loadingComments[post.id] &&
-                      postComments.map((c) => {
-                        // Prefer real profile name if available
-                        const displayName =
-                          (c.profiles?.full_name &&
-                            c.profiles.full_name.trim()) ||
-                          `Guest ${c.customer_id.slice(0, 6).toUpperCase()}`;
+                      postComments
+                        .filter(c => c.parent_comment_id === null || c.parent_comment_id === undefined)
+                        .map((c) => {
+                        // Use display_name from the view which handles the logic
+                        const displayName = c.display_name || `Guest ${c.customer_id.slice(0, 6).toUpperCase()}`;
 
                         const initials = displayName
                           .split(' ')
@@ -461,26 +495,85 @@ const Blog = () => {
                           .toUpperCase();
 
                         return (
-                          <div
-                            key={c.id}
-                            className="flex items-start gap-2 text-[9px] bg-background/60 border border-border/20 rounded-xl px-2 py-1.5"
-                          >
-                            {/* Luxury-style circular initials badge */}
-                            <div className="mt-0.5 w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-[8px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-amber-300/70">
-                              {initials}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-1">
-                                <span className="font-semibold text-foreground/90 truncate max-w-[140px]">
-                                  {displayName}
-                                </span>
-                                <span className="text-[7px] text-muted-foreground">
-                                  {new Date(c.created_at).toLocaleDateString()}
-                                </span>
+                          <div key={c.id} className="space-y-2">
+                            {/* Main comment */}
+                            <div className="flex items-start gap-2 text-[9px] bg-background/60 border border-border/20 rounded-xl px-2 py-1.5">
+                              {/* Luxury-style circular initials badge */}
+                              <div className="mt-0.5 w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-[8px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-amber-300/70">
+                                {initials}
                               </div>
-                              <p className="text-[8px] text-muted-foreground leading-snug">
-                                {c.content}
-                              </p>
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] text-foreground font-medium truncate max-w-[120px]">
+                                    {displayName}
+                                  </span>
+                                  <span className="text-[8px] text-muted-foreground whitespace-nowrap">
+                                    {new Date(c.created_at).toLocaleDateString('en-US', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: '2-digit'
+                                    })} • {new Date(c.created_at).toLocaleTimeString('en-US', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })}
+                                  </span>
+                                </div>
+                                <p className="text-[9px] text-foreground leading-snug">
+                                  {c.content}
+                                </p>
+                                
+                                {/* Show replies for this comment */}
+                                {(() => {
+                                  const replies = postComments.filter(reply => reply.parent_comment_id === c.id);
+                                  if (replies.length === 0) return null;
+                                  
+                                  return (
+                                    <div className="space-y-1 mt-2 border-l-2 border-border/40 pl-2">
+                                      {replies.map((reply) => {
+                                        const replyDisplayName =
+                                          reply.display_name || `Guest ${reply.customer_id.slice(0, 6).toUpperCase()}`;
+                                        
+                                        const replyInitials = replyDisplayName
+                                          .split(' ')
+                                          .map(word => word[0])
+                                          .join('')
+                                          .slice(0, 2)
+                                          .toUpperCase();
+                                        
+                                        return (
+                                          <div key={reply.id} className="flex items-start gap-1 opacity-80">
+                                            <div className="mt-0.5 w-5 h-5 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-300 to-emerald-500 text-[7px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-emerald-300/70">
+                                              {replyInitials}
+                                            </div>
+                                            <div className="flex-1 space-y-0.5">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[8px] text-foreground font-medium truncate max-w-[100px]">
+                                                  {replyDisplayName} (Reply)
+                                                </span>
+                                                <span className="text-[7px] text-muted-foreground whitespace-nowrap">
+                                                  {new Date(reply.created_at).toLocaleDateString('en-US', {
+                                                    day: '2-digit',
+                                                    month: '2-digit',
+                                                    year: '2-digit'
+                                                  })} • {new Date(reply.created_at).toLocaleTimeString('en-US', {
+                                                    hour: '2-digit',
+                                                    minute: '2-digit',
+                                                    hour12: true
+                                                  })}
+                                                </span>
+                                              </div>
+                                              <p className="text-[8px] text-foreground leading-snug">
+                                                {reply.content}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </div>
                         );
