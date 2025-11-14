@@ -14,6 +14,7 @@ import Orders from "./pages/Orders";
 import Profile from "./pages/Profile";
 import Blog from "./pages/Blog";
 import RestaurantDashboard from "./pages/dashboard/RestaurantDashboard";
+import BlogEditor from "./pages/dashboard/BlogEditor";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminRestaurants from "./pages/admin/AdminRestaurants";
 import AdminOwners from "./pages/admin/AdminOwners";
@@ -46,6 +47,8 @@ const App = () => (
 
             {/* Restaurant owner dashboard */}
             <Route path="/dashboard" element={<RestaurantDashboard />} />
+            <Route path="/dashboard/blog/new" element={<BlogEditor />} />
+            <Route path="/dashboard/blog/edit/:postId" element={<BlogEditor />} />
 
             {/* Admin */}
             <Route path="/admin" element={<AdminDashboard />} />

@@ -1,0 +1,103 @@
+.ql-toolbar {
+  border-top: 2px solid #3b82f6 !important;
+  border-left: 2px solid #3b82f6 !important;
+  border-right: 2px solid #3b82f6 !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+.ql-container {
+  border-left: 2px solid #3b82f6 !important;
+  border-right: 2px solid #3b82f6 !important;
+  border-bottom: 2px solid #3b82f6 !important;
+  border-radius: 0 !important;
+  background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+.ql-editor {
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 250px;
+}
+
+/* Mobile responsiveness for Quill editor */
+@media (max-width: 768px) {
+  .ql-toolbar {
+    padding: 8px 4px !important;
+  }
+  
+  .ql-toolbar .ql-formats {
+    margin-right: 6px !important;
+  }
+  
+  .ql-toolbar button {
+    padding: 3px !important;
+    margin: 1px !important;
+  }
+  
+  .ql-toolbar .ql-picker-label {
+    padding: 3px !important;
+  }
+  
+  .ql-editor {
+    font-size: 13px;
+    min-height: 200px;
+    padding: 10px !important;
+  }
+  
+  .ql-container {
+    font-size: 13px;
+  }
+}
+
+/* Extra small mobile adjustments */
+@media (max-width: 480px) {
+  .ql-toolbar {
+    padding: 6px 2px !important;
+  }
+  
+  .ql-toolbar .ql-formats {
+    margin-right: 4px !important;
+  }
+  
+  .ql-toolbar button {
+    width: 24px !important;
+    height: 24px !important;
+    padding: 2px !important;
+  }
+  
+  .ql-toolbar .ql-picker-label {
+    padding: 2px !important;
+  }
+  
+  .ql-editor {
+    font-size: 12px;
+    min-height: 180px;
+    padding: 8px !important;
+  }
+}
+
+.ql-editor.ql-blank::before {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.ql-toolbar button:hover,
+.ql-toolbar button.ql-active {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  color: #3b82f6 !important;
+}
+
+.ql-toolbar .ql-picker-item:hover,
+.ql-toolbar .ql-picker-item.ql-selected,
+.ql-toolbar .ql-picker-label:hover,
+.ql-toolbar .ql-picker-label.ql-active {
+  color: #3b82f6 !important;
+}
+
+.ql-toolbar .ql-picker-options {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+  border: 1px solid #3b82f6 !important;
+  border-radius: 0 !important;
+}

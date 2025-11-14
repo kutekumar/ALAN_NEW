@@ -199,26 +199,42 @@ const RestaurantBlogPostDetail = ({
     <div className="min-h-screen bg-gradient-to-b from-background via-background/70 to-secondary/10">
       {/* Header */}
       <div className="bg-card/90 backdrop-blur-lg border-b border-border/40 sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 md:py-4">
+          <div className="flex items-center gap-2 md:gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground md:hidden"
+              onClick={onBack}
+            >
+              <ArrowLeft className="w-6 h-6" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 text-muted-foreground hover:text-foreground"
+              className="gap-2 text-muted-foreground hover:text-foreground hidden md:flex"
               onClick={onBack}
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Posts
             </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-semibold text-foreground">Post Details</h1>
-              <p className="text-sm text-muted-foreground">Full view with customer feedback</p>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg md:text-xl font-semibold text-foreground truncate">Post Details</h1>
+              <p className="text-xs md:text-sm text-muted-foreground hidden md:block">Full view with customer feedback</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="md:hidden h-8 w-8 text-muted-foreground hover:text-primary hover:border-primary/40"
+                onClick={() => onEdit(post)}
+              >
+                <Edit2 className="w-4 h-4" />
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2"
+                className="hidden md:flex gap-2"
                 onClick={() => onEdit(post)}
               >
                 <Edit2 className="w-4 h-4" />
@@ -226,8 +242,16 @@ const RestaurantBlogPostDetail = ({
               </Button>
               <Button
                 variant="outline"
+                size="icon"
+                className="md:hidden h-8 w-8 text-destructive/80 hover:text-destructive hover:bg-destructive/5 hover:border-destructive/40"
+                onClick={() => onDelete(post.id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
                 size="sm"
-                className="gap-2 text-destructive hover:text-destructive/80 border-destructive/20 hover:border-destructive/40"
+                className="hidden md:flex gap-2 text-destructive hover:text-destructive/80 border-destructive/20 hover:border-destructive/40"
                 onClick={() => onDelete(post.id)}
               >
                 <Trash2 className="w-4 h-4" />
@@ -239,19 +263,19 @@ const RestaurantBlogPostDetail = ({
       </div>
 
       {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6 space-y-4 md:space-y-6">
         {/* Post Content Card */}
         <Card className="bg-card/90 backdrop-blur-md border-border/40 overflow-hidden">
           {post.is_pinned && (
             <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-primary via-amber-400 to-primary/70 z-10" />
           )}
           
-          <div className="p-6 space-y-4">
+          <div className="p-4 md:p-6 space-y-3 md:space-y-4">
             {/* Post Header */}
             <div className="flex items-start justify-between">
               <div className="space-y-2 flex-1">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-2xl font-bold text-foreground">{post.title}</h2>
+                  <h2 className="text-xl md:text-2xl font-bold text-foreground">{post.title}</h2>
                   <div className="flex items-center gap-2">
                     {post.is_published ? (
                       <Badge className="h-6 px-3 text-[9px] bg-emerald-500/10 text-emerald-500 border-emerald-500/30 flex items-center gap-1">
@@ -272,7 +296,7 @@ const RestaurantBlogPostDetail = ({
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-muted-foreground flex-wrap">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
                     <span>Created: {new Date(post.created_at).toLocaleDateString('en-US', { 
@@ -321,18 +345,18 @@ const RestaurantBlogPostDetail = ({
 
             {/* Hero Image */}
             {post.hero_image_url && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-border/40 bg-muted/40">
+              <div className="mt-3 md:mt-4 overflow-hidden rounded-xl border border-border/40 bg-muted/40">
                 <img
                   src={post.hero_image_url}
                   alt={post.title}
-                  className="w-full h-48 object-cover"
+                  className="w-full h-32 md:h-48 object-cover"
                 />
               </div>
             )}
 
             {/* Post Content */}
             <div className="prose prose-sm max-w-none">
-              <div className="text-[15px] text-foreground leading-relaxed whitespace-pre-line">
+              <div className="text-[13px] md:text-[15px] text-foreground leading-relaxed whitespace-pre-line">
                 {post.content}
               </div>
             </div>
@@ -381,14 +405,14 @@ const RestaurantBlogPostDetail = ({
 
         {/* Customer Feedback Section */}
         <Card className="bg-card/90 backdrop-blur-md border-border/40">
-          <div className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <MessageCircle className="w-5 h-5 text-primary" />
-              <h3 className="text-lg font-semibold text-foreground">Customer Feedback</h3>
-              <span className="text-sm text-muted-foreground">({comments.length})</span>
+          <div className="p-4 md:p-6">
+            <div className="flex items-center gap-2 mb-3 md:mb-4">
+              <MessageCircle className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              <h3 className="text-base md:text-lg font-semibold text-foreground">Customer Feedback</h3>
+              <span className="text-xs md:text-sm text-muted-foreground">({comments.length})</span>
             </div>
 
-            <Separator className="mb-4" />
+            <Separator className="mb-3 md:mb-4" />
 
             {loadingComments ? (
               <div className="space-y-3">
@@ -410,7 +434,7 @@ const RestaurantBlogPostDetail = ({
                 <p className="text-xs mt-1">Comments will appear here once customers start engaging with your post</p>
               </div>
             ) : (
-              <ScrollArea className="h-[400px] pr-2">
+              <ScrollArea className="h-[300px] md:h-[400px] pr-2">
                 <div className="space-y-4">
                   {comments
                     .filter(comment => comment.parent_comment_id === null || comment.parent_comment_id === undefined)
@@ -426,17 +450,17 @@ const RestaurantBlogPostDetail = ({
                       return (
                         <div key={comment.id} className="space-y-3">
                           {/* Main Comment */}
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-start gap-1 md:gap-2">
                             {/* Luxury-style circular initials badge */}
-                            <div className="mt-0.5 w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-[8px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-amber-300/70">
+                            <div className="mt-0.5 w-5 h-5 md:w-6 md:h-6 rounded-full bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-[7px] md:text-[8px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-amber-300/70">
                               {userInitials}
                             </div>
                             <div className="flex-1 space-y-1">
                               <div className="flex items-center justify-between">
-                                <span className="text-[9px] text-foreground font-medium truncate max-w-[120px]">
+                                <span className="text-[8px] md:text-[9px] text-foreground font-medium truncate max-w-[100px] md:max-w-[120px]">
                                   {displayName}
                                 </span>
-                                <span className="text-[8px] text-muted-foreground whitespace-nowrap">
+                                <span className="text-[7px] md:text-[8px] text-muted-foreground whitespace-nowrap">
                                   {new Date(comment.created_at).toLocaleDateString('en-US', {
                                     day: '2-digit',
                                     month: '2-digit',
@@ -448,13 +472,13 @@ const RestaurantBlogPostDetail = ({
                                   })}
                                 </span>
                               </div>
-                              <p className="text-[9px] text-foreground leading-snug">
+                              <p className="text-[8px] md:text-[9px] text-foreground leading-snug">
                                 {comment.content}
                               </p>
                               
                               {/* Replies */}
                               {replies.length > 0 && (
-                                <div className="space-y-2 mt-2 border-l-2 border-border/40 pl-3">
+                                <div className="space-y-1 md:space-y-2 mt-2 border-l-2 border-border/40 pl-2 md:pl-3">
                                   {replies.map((reply) => {
                                     const replyDisplayName =
                                       reply.display_name || `Guest ${reply.customer_id.slice(0, 6).toUpperCase()}`;
@@ -463,15 +487,15 @@ const RestaurantBlogPostDetail = ({
                                     
                                     return (
                                       <div key={reply.id} className="flex items-start gap-2 opacity-80">
-                                        <div className="mt-0.5 w-5 h-5 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-300 to-emerald-500 text-[7px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-emerald-300/70">
+                                        <div className="mt-0.5 w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-300 to-emerald-500 text-[6px] md:text-[7px] flex items-center justify-center text-slate-900 font-semibold shadow-sm border border-emerald-300/70">
                                           {replyInitials}
                                         </div>
                                         <div className="flex-1 space-y-1">
                                           <div className="flex items-center justify-between">
-                                            <span className="text-[8px] text-foreground font-medium truncate max-w-[100px]">
+                                            <span className="text-[7px] md:text-[8px] text-foreground font-medium truncate max-w-[80px] md:max-w-[100px]">
                                               {replyDisplayName} (Reply)
                                             </span>
-                                            <span className="text-[7px] text-muted-foreground whitespace-nowrap">
+                                            <span className="text-[6px] md:text-[7px] text-muted-foreground whitespace-nowrap">
                                               {new Date(reply.created_at).toLocaleDateString('en-US', {
                                                 day: '2-digit',
                                                 month: '2-digit',
@@ -483,22 +507,22 @@ const RestaurantBlogPostDetail = ({
                                               })}
                                             </span>
                                           </div>
-                                          <p className="text-[8px] text-foreground leading-snug">
+                                          <p className="text-[7px] md:text-[8px] text-foreground leading-snug">
                                             {reply.content}
                                           </p>
                                         </div>
                                         <Button
                                           variant="ghost"
-                                          size="sm"
-                                          className="h-5 w-5 p-1 text-[6px] text-destructive hover:text-destructive/80 hover:bg-destructive/5"
+                                          size="icon"
+                                          className="h-4 w-4 md:h-5 md:w-5 p-1 text-destructive hover:text-destructive/80 hover:bg-destructive/5"
                                           onClick={() => handleDeleteComment(reply.id)}
                                           disabled={deletingId === reply.id}
                                           title="Delete reply"
                                         >
                                           {deletingId === reply.id ? (
-                                            <Clock className="w-2 h-2 animate-spin" />
+                                            <Clock className="w-2 h-2 md:w-3 md:h-3 animate-spin" />
                                           ) : (
-                                            <Trash2 className="w-2 h-2" />
+                                            <Trash2 className="w-2 h-2 md:w-3 md:h-3" />
                                           )}
                                         </Button>
                                       </div>
@@ -510,25 +534,25 @@ const RestaurantBlogPostDetail = ({
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-1 text-[7px] text-muted-foreground hover:text-primary hover:bg-primary/5"
+                                size="icon"
+                                className="h-5 w-5 md:h-6 md:w-6 p-1 text-muted-foreground hover:text-primary hover:bg-primary/5"
                                 onClick={() => setReplyingTo(comment.id)}
                                 title="Reply to comment"
                               >
-                                <Reply className="w-3 h-3" />
+                                <Reply className="w-2.5 h-2.5 md:w-3 md:h-3" />
                               </Button>
                               <Button
                                 variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-1 text-[7px] text-destructive hover:text-destructive/80 hover:bg-destructive/5"
+                                size="icon"
+                                className="h-5 w-5 md:h-6 md:w-6 p-1 text-destructive hover:text-destructive/80 hover:bg-destructive/5"
                                 onClick={() => handleDeleteComment(comment.id)}
                                 disabled={deletingId === comment.id}
                                 title="Delete comment"
                               >
                                 {deletingId === comment.id ? (
-                                  <Clock className="w-3 h-3 animate-spin" />
+                                  <Clock className="w-2.5 h-2.5 md:w-3 md:h-3 animate-spin" />
                                 ) : (
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-2.5 h-2.5 md:w-3 md:h-3" />
                                 )}
                               </Button>
                             </div>
@@ -536,7 +560,7 @@ const RestaurantBlogPostDetail = ({
 
                           {/* Reply Input */}
                           {replyingTo === comment.id && (
-                            <div className="ml-8 flex gap-2">
+                            <div className="ml-6 md:ml-8 flex gap-2">
                               <Textarea
                                 placeholder="Write a reply..."
                                 value={replyText[comment.id] || ''}
@@ -544,13 +568,13 @@ const RestaurantBlogPostDetail = ({
                                   ...prev,
                                   [comment.id]: e.target.value
                                 }))}
-                                className="text-[9px] resize-none border-border/40 bg-background/80 focus-visible:ring-primary/40 h-16"
+                                className="text-[8px] md:text-[9px] resize-none border-border/40 bg-background/80 focus-visible:ring-primary/40 h-14 md:h-16"
                                 rows={2}
                               />
                               <div className="flex flex-col gap-1">
                                 <Button
                                   size="sm"
-                                  className="h-6 px-2 text-[8px] rounded-full bg-primary/90 hover:bg-primary shadow-sm"
+                                  className="h-5 md:h-6 px-2 text-[7px] md:text-[8px] rounded-full bg-primary/90 hover:bg-primary shadow-sm"
                                   onClick={() => handleReplyToComment(comment.id)}
                                   disabled={!replyText[comment.id]?.trim()}
                                 >
@@ -559,7 +583,7 @@ const RestaurantBlogPostDetail = ({
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 px-2 text-[8px] text-muted-foreground"
+                                  className="h-5 md:h-6 px-2 text-[7px] md:text-[8px] text-muted-foreground"
                                   onClick={() => {
                                     setReplyingTo(null);
                                     setReplyText(prev => ({ ...prev, [comment.id]: '' }));

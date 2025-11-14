@@ -1,6 +1,6 @@
-import { useState } from 'react';
+ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LogOut,
@@ -40,7 +40,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 const RestaurantDashboard = () => {
   const { signOut } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'orders' | 'scanner' | 'menu' | 'blog' | 'settings'>('orders');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<'orders' | 'scanner' | 'menu' | 'blog' | 'settings'>('blog');
+
+  useEffect(() => {
+    // Read tab from URL parameters
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab') as 'orders' | 'scanner' | 'menu' | 'blog' | 'settings' | null;
+    if (tab && ['orders', 'scanner', 'menu', 'blog', 'settings'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
 
   const {
     restaurantId,
@@ -465,7 +475,10 @@ const RestaurantDashboard = () => {
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border glass-effect z-50">
         <div className="max-w-md mx-auto flex justify-around items-center h-16 px-4">
           <button
-            onClick={() => setActiveTab('orders')}
+            onClick={() => {
+              setActiveTab('orders');
+              navigate('/dashboard?tab=orders');
+            }}
             className={`flex flex-col items-center justify-center flex-1 transition-colors ${
               activeTab === 'orders' ? 'text-primary' : 'text-muted-foreground'
             }`}
@@ -475,7 +488,10 @@ const RestaurantDashboard = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('scanner')}
+            onClick={() => {
+              setActiveTab('scanner');
+              navigate('/dashboard?tab=scanner');
+            }}
             className={`flex flex-col items-center justify-center flex-1 transition-colors ${
               activeTab === 'scanner' ? 'text-primary' : 'text-muted-foreground'
             }`}
@@ -485,7 +501,10 @@ const RestaurantDashboard = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('menu')}
+            onClick={() => {
+              setActiveTab('menu');
+              navigate('/dashboard?tab=menu');
+            }}
             className={`flex flex-col items-center justify-center flex-1 transition-colors ${
               activeTab === 'menu' ? 'text-primary' : 'text-muted-foreground'
             }`}
@@ -495,7 +514,10 @@ const RestaurantDashboard = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('blog')}
+            onClick={() => {
+              setActiveTab('blog');
+              navigate('/dashboard?tab=blog');
+            }}
             className={`flex flex-col items-center justify-center flex-1 transition-colors ${
               activeTab === 'blog' ? 'text-primary' : 'text-muted-foreground'
             }`}
@@ -505,7 +527,10 @@ const RestaurantDashboard = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={() => {
+              setActiveTab('settings');
+              navigate('/dashboard?tab=settings');
+            }}
             className={`flex flex-col items-center justify-center flex-1 transition-colors ${
               activeTab === 'settings' ? 'text-primary' : 'text-muted-foreground'
             }`}
