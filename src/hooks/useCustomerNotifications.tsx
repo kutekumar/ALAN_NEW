@@ -61,18 +61,31 @@ export function useCustomerNotifications(options: UseCustomerNotificationsOption
     try {
       const audio = getNotificationAudio();
 
-      // Attempt to play sound
-      const attemptPlay = () => {
+      // Attempt to play sound with better error handling
+      const attemptPlay = async () => {
         audio.currentTime = 0;
-        audio.play().catch(() => {
-          // Autoplay restrictions: silently ignore
-        });
+        try {
+          await audio.play();
+          console.log('🔔 Notification sound played successfully');
+        } catch (error) {
+          console.warn('🔇 Notification sound blocked by autoplay policy:', error);
+          // Fallback: try to play after user interaction
+          const handleUserInteraction = () => {
+            audio.play().catch(() => {
+              console.warn('🔇 Fallback sound playback also failed');
+            });
+            document.removeEventListener('click', handleUserInteraction);
+            document.removeEventListener('keydown', handleUserInteraction);
+          };
+          
+          document.addEventListener('click', handleUserInteraction);
+          document.addEventListener('keydown', handleUserInteraction);
+        }
       };
 
-      // Always attempt play
       attemptPlay();
-    } catch {
-      // no-op
+    } catch (error) {
+      console.error('❌ Failed to play notification sound:', error);
     }
   }, [enableSound]);
 

@@ -61,6 +61,12 @@ const Blog = () => {
   const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRestaurant, setSelectedRestaurant] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'restaurant'>('newest');
+  const [showFilters, setShowFilters] = useState(false);
+  
 
   useEffect(() => {
     const init = async () => {
@@ -73,34 +79,60 @@ const Blog = () => {
     };
     void init();
   }, []);
+const fetchPosts = async () => {
+  try {
+    setLoadingPosts(true);
+    
+    // Build the base query
+    let query = supabase
+      .from('blog_posts')
+      .select(`
+        *,
+        restaurants (
+          name,
+          image_url
+        ),
+        comments_count:blog_comments(count)
+      `)
+      .eq('is_published', true);
 
-  const fetchPosts = async () => {
-    try {
-      setLoadingPosts(true);
-      // Fetch published posts with restaurant details and aggregated comments count
-      const { data, error } = await supabase
-        .from('blog_posts')
-        .select(`
-          *,
-          restaurants (
-            name,
-            image_url
-          ),
-          comments_count:blog_comments(count)
-        `)
-        .eq('is_published', true)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false });
+    // Apply search filter
+    if (searchQuery.trim()) {
+      query = query.ilike('title', `%${searchQuery.trim()}%`);
+    }
 
-      if (error) {
-        console.error('Error loading blog posts', error);
-        setPosts([]);
-        return;
-      }
+    // Apply restaurant filter
+    if (selectedRestaurant) {
+      query = query.eq('restaurant_id', selectedRestaurant);
+    }
 
-      // Normalize comments_count from the aggregated nested response into a flat number
-      const normalized =
-        (data as any[] | null)?.map((row) => ({
+    // Apply sorting
+    switch (sortBy) {
+      case 'oldest':
+        query = query.order('is_pinned', { ascending: false })
+                 .order('created_at', { ascending: true });
+        break;
+      case 'restaurant':
+        query = query.order('is_pinned', { ascending: false })
+                 .order('restaurants.name', { ascending: true })
+                 .order('created_at', { ascending: false });
+        break;
+      default:
+        query = query.order('is_pinned', { ascending: false })
+                 .order('created_at', { ascending: false });
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error loading blog posts', error);
+      setPosts([]);
+      return;
+    }
+
+    // Normalize comments_count from the aggregated nested response into a flat number
+    const normalized =
+      (data as any[] | null)?.map((row) => ({
           ...row,
           comments_count:
             Array.isArray(row.comments_count) &&
@@ -118,6 +150,58 @@ const Blog = () => {
       setLoadingPosts(false);
     }
   };
+
+  // Fetch unique restaurants for filter dropdown
+  const [restaurants, setRestaurants] = useState<Array<{id: string, name: string}>>([]);
+  const fetchRestaurants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('id, name')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error loading restaurants', error);
+        return;
+      }
+
+      setRestaurants(data || []);
+    } catch (err) {
+      console.error('Unexpected error loading restaurants', err);
+    }
+  };
+
+  // Filtered and sorted posts for display
+  const filteredPosts = posts.filter(post => {
+    // Search filter
+    if (searchQuery.trim() && !post.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    
+    // Restaurant filter
+    if (selectedRestaurant && post.restaurant_id !== selectedRestaurant) {
+      return false;
+    }
+    
+    return true;
+  });
+
+  // Sort posts based on selected criteria
+  const sortedPosts = [...filteredPosts].sort((a, b) => {
+    if (sortBy === 'restaurant') {
+      const nameA = a.restaurants?.name?.toLowerCase() || '';
+      const nameB = b.restaurants?.name?.toLowerCase() || '';
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    
+    if (sortBy === 'oldest') {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    
+    // newest (default)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   const toggleContentExpand = (postId: string) => {
     setExpandedContentPostIds((prev) => {
@@ -294,12 +378,88 @@ const Blog = () => {
               variant="outline"
               size="icon"
               className="rounded-full border-border/70 hover:bg-primary/5"
-              onClick={fetchPosts}
+              onClick={() => setShowFilters(!showFilters)}
             >
-              <ArrowRight className="w-4 h-4 rotate-90" />
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </Button>
           </div>
         </div>
+
+        {/* Search and Filter Section */}
+        {showFilters && (
+          <div className="max-w-md mx-auto px-5 py-4 border-t border-border/40">
+            <div className="space-y-3">
+              {/* Search Input */}
+              <div>
+                <input
+                  type="text"
+                  placeholder="Search blog posts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-background/60 border border-border/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+
+              {/* Restaurant Filter */}
+              <div>
+                <select
+                  value={selectedRestaurant}
+                  onChange={(e) => setSelectedRestaurant(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-background/60 border border-border/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="">All Restaurants</option>
+                  {restaurants.map((restaurant) => (
+                    <option key={restaurant.id} value={restaurant.id}>
+                      {restaurant.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sort Options */}
+              <div className="flex gap-2">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="flex-1 px-3 py-2 text-sm bg-background/60 border border-border/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="restaurant">By Restaurant</option>
+                </select>
+              </div>
+
+              {/* Filter Summary */}
+              {(searchQuery.trim() || selectedRestaurant) && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Showing {sortedPosts.length} posts</span>
+                  {searchQuery.trim() && (
+                    <span className="px-2 py-1 bg-primary/10 text-primary rounded-full">
+                      Search: "{searchQuery}"
+                    </span>
+                  )}
+                  {selectedRestaurant && (
+                    <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-full">
+                      {restaurants.find(r => r.id === selectedRestaurant)?.name}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedRestaurant('');
+                      setSortBy('newest');
+                    }}
+                    className="ml-1 text-primary hover:text-primary/80"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
 
@@ -312,16 +472,33 @@ const Blog = () => {
           </>
         )}
 
-        {!loadingPosts && posts.length === 0 && (
+        {!loadingPosts && sortedPosts.length === 0 && (
           <Card className="p-6 text-center bg-card/60 backdrop-blur-sm border-dashed border-border/60">
-            <p className="text-sm text-muted-foreground">
-              No blog posts yet. Restaurants will share their promotions and menu highlights here.
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {posts.length === 0
+                  ? "No blog posts yet. Restaurants will share their promotions and menu highlights here."
+                  : "No blog posts match your current filters."
+                }
+              </p>
+              {searchQuery.trim() || selectedRestaurant ? (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedRestaurant('');
+                    setSortBy('newest');
+                  }}
+                  className="text-primary hover:text-primary/80 text-sm"
+                >
+                  Clear all filters
+                </button>
+              ) : null}
+            </div>
           </Card>
         )}
 
         {!loadingPosts &&
-          posts.map((post) => {
+          sortedPosts.map((post) => {
             const postComments = comments[post.id] || [];
             const commentsExpanded = expandedPostIds.has(post.id);
             const initials =

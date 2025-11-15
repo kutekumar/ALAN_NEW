@@ -48,7 +48,6 @@ type BlogPost = {
   linked_menu_items?: MenuItem[];
 };
 
-
 const RestaurantBlogManagement = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -59,6 +58,12 @@ const RestaurantBlogManagement = () => {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterBy, setFilterBy] = useState<'all' | 'published' | 'drafts' | 'pinned'>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Derive hero suggestions: from menu items that have an image
   const heroSuggestions = useMemo(
@@ -161,57 +166,95 @@ const RestaurantBlogManagement = () => {
   };
 
   const loadPosts = async (rId: string) => {
-    const { data, error } = await supabase
-      .from("blog_posts")
-      .select("*")
-      .eq("restaurant_id", rId)
-      .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false });
+    try {
+      let query = supabase
+        .from("blog_posts")
+        .select("*")
+        .eq("restaurant_id", rId);
 
-    if (error) {
-      console.error("Error loading blog posts", error);
-      return;
-    }
+      // Apply filters
+      switch (filterBy) {
+        case 'published':
+          query = query.eq('is_published', true);
+          break;
+        case 'drafts':
+          query = query.eq('is_published', false);
+          break;
+        case 'pinned':
+          query = query.eq('is_pinned', true);
+          break;
+      }
 
-    const postsData = (data as BlogPost[]) || [];
+      // Apply search filter
+      if (searchQuery.trim()) {
+        query = query.ilike('title', `%${searchQuery.trim()}%`);
+      }
 
-    // Fetch linked menu items per post via blog_post_menu_items
-    if (postsData.length > 0) {
-      const ids = postsData.map((p) => p.id);
-      const { data: links, error: linksError } = await supabase
-        .from("blog_post_menu_items")
-        .select("blog_post_id, menu_item_id")
-        .in("blog_post_id", ids);
+      // Apply sorting
+      switch (sortBy) {
+        case 'oldest':
+          query = query.order("is_pinned", { ascending: false })
+                   .order("created_at", { ascending: true });
+          break;
+        case 'title':
+          query = query.order("is_pinned", { ascending: false })
+                   .order("title", { ascending: true });
+          break;
+        default:
+          query = query.order("is_pinned", { ascending: false })
+                   .order("created_at", { ascending: false });
+      }
 
-      if (linksError) {
-        console.error("Error loading blog_post_menu_items", linksError);
-        setPosts(postsData);
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error loading blog posts", error);
         return;
       }
 
-      const linkByPost: Record<string, string[]> = {};
-      (links || []).forEach((l: any) => {
-        if (!linkByPost[l.blog_post_id]) linkByPost[l.blog_post_id] = [];
-        linkByPost[l.blog_post_id].push(l.menu_item_id);
-      });
+      const postsData = (data as BlogPost[]) || [];
 
-      const menuMap: Record<string, MenuItem> = {};
-      menuItems.forEach((m) => {
-        menuMap[m.id] = m;
-      });
+      // Fetch linked menu items per post via blog_post_menu_items
+      if (postsData.length > 0) {
+        const ids = postsData.map((p) => p.id);
+        const { data: links, error: linksError } = await supabase
+          .from("blog_post_menu_items")
+          .select("blog_post_id, menu_item_id")
+          .in("blog_post_id", ids);
 
-      const enriched = postsData.map((p) => {
-        const linkedIds = linkByPost[p.id] || [];
-        return {
-          ...p,
-          linked_menu_items: linkedIds
-            .map((id) => menuMap[id])
-            .filter(Boolean) as MenuItem[],
-        };
-      });
+        if (linksError) {
+          console.error("Error loading blog_post_menu_items", linksError);
+          setPosts(postsData);
+          return;
+        }
 
-      setPosts(enriched);
-    } else {
+        const linkByPost: Record<string, string[]> = {};
+        (links || []).forEach((l: any) => {
+          if (!linkByPost[l.blog_post_id]) linkByPost[l.blog_post_id] = [];
+          linkByPost[l.blog_post_id].push(l.menu_item_id);
+        });
+
+        const menuMap: Record<string, MenuItem> = {};
+        menuItems.forEach((m) => {
+          menuMap[m.id] = m;
+        });
+
+        const enriched = postsData.map((p) => {
+          const linkedIds = linkByPost[p.id] || [];
+          return {
+            ...p,
+            linked_menu_items: linkedIds
+              .map((id) => menuMap[id])
+              .filter(Boolean) as MenuItem[],
+          };
+        });
+
+        setPosts(enriched);
+      } else {
+        setPosts([]);
+      }
+    } catch (err) {
+      console.error('Unexpected error loading blog posts', err);
       setPosts([]);
     }
   };
@@ -266,9 +309,6 @@ const RestaurantBlogManagement = () => {
     }
   };
 
-
-
-
   if (loadingInitial) {
     return (
       <div className="space-y-3">
@@ -298,6 +338,41 @@ const RestaurantBlogManagement = () => {
       </Card>
     );
   }
+
+  // Filter and sort posts for display
+  const filteredAndSortedPosts = posts.filter(post => {
+    // Search filter
+    if (searchQuery.trim() && !post.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    
+    // Status filter
+    switch (filterBy) {
+      case 'published':
+        return post.is_published;
+      case 'drafts':
+        return !post.is_published;
+      case 'pinned':
+        return post.is_pinned;
+      default:
+        return true;
+    }
+  }).sort((a, b) => {
+    // Sort by pinned status first (pinned posts always on top)
+    if (a.is_pinned !== b.is_pinned) {
+      return b.is_pinned ? 1 : -1;
+    }
+    
+    // Then sort by selected criteria
+    switch (sortBy) {
+      case 'oldest':
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      case 'title':
+        return a.title.localeCompare(b.title);
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+  });
 
   return (
     <div className="space-y-5">
@@ -340,19 +415,138 @@ const RestaurantBlogManagement = () => {
                 seasonal menus, and special offers. Customers read these on the Blog tab.
               </p>
             </div>
-            <Button
-              size="sm"
-              className="gap-2 rounded-full bg-primary/90 hover:bg-primary shadow-sm self-start sm:self-auto"
-              onClick={openCreate}
-            >
-              <Plus className="w-3 h-3" />
-              <span className="text-[10px] font-medium">New Post</span>
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 self-start sm:self-auto"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span className="text-[10px]">Filter</span>
+              </Button>
+              <Button
+                size="sm"
+                className="gap-2 rounded-full bg-primary/90 hover:bg-primary shadow-sm self-start sm:self-auto"
+                onClick={openCreate}
+              >
+                <Plus className="w-3 h-3" />
+                <span className="text-[10px] font-medium">New Post</span>
+              </Button>
+            </div>
           </div>
+
+          {/* Search and Filter Section */}
+          {showFilters && (
+            <div className="border-t border-border/40 pt-4">
+              <div className="space-y-3">
+                {/* Search Input */}
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Search your blog posts..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-background/60 border border-border/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+
+                {/* Filter Options */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    onClick={() => setFilterBy('all')}
+                    className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                      filterBy === 'all'
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-background/60 text-muted-foreground hover:bg-background/80'
+                    }`}
+                  >
+                    All ({posts.length})
+                  </button>
+                  <button
+                    onClick={() => setFilterBy('published')}
+                    className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                      filterBy === 'published'
+                        ? 'bg-emerald-500/20 text-emerald-500'
+                        : 'bg-background/60 text-muted-foreground hover:bg-background/80'
+                    }`}
+                  >
+                    Published ({posts.filter(p => p.is_published).length})
+                  </button>
+                  <button
+                    onClick={() => setFilterBy('drafts')}
+                    className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                      filterBy === 'drafts'
+                        ? 'bg-yellow-500/20 text-yellow-500'
+                        : 'bg-background/60 text-muted-foreground hover:bg-background/80'
+                    }`}
+                  >
+                    Drafts ({posts.filter(p => !p.is_published).length})
+                  </button>
+                  <button
+                    onClick={() => setFilterBy('pinned')}
+                    className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
+                      filterBy === 'pinned'
+                        ? 'bg-amber-500/20 text-amber-500'
+                        : 'bg-background/60 text-muted-foreground hover:bg-background/80'
+                    }`}
+                  >
+                    Pinned ({posts.filter(p => p.is_pinned).length})
+                  </button>
+                </div>
+
+                {/* Sort Options */}
+                <div className="flex gap-2">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                    className="flex-1 px-3 py-2 text-xs bg-background/60 border border-border/40 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="title">By Title</option>
+                  </select>
+                </div>
+
+                {/* Filter Summary */}
+                {(searchQuery.trim() || filterBy !== 'all') && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Showing {filteredAndSortedPosts.length} of {posts.length} posts</span>
+                    {searchQuery.trim() && (
+                      <span className="px-2 py-1 bg-primary/10 text-primary rounded-full">
+                        Search: "{searchQuery}"
+                      </span>
+                    )}
+                    {filterBy !== 'all' && (
+                      <span className={`px-2 py-1 rounded-full ${
+                        filterBy === 'published' ? 'bg-emerald-500/10 text-emerald-500' :
+                        filterBy === 'drafts' ? 'bg-yellow-500/10 text-yellow-500' :
+                        'bg-amber-500/10 text-amber-500'
+                      }`}>
+                        {filterBy.charAt(0).toUpperCase() + filterBy.slice(1)}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setFilterBy('all');
+                        setSortBy('newest');
+                      }}
+                      className="ml-1 text-primary hover:text-primary/80"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Existing posts */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {posts.length === 0 && (
+        {filteredAndSortedPosts.length === 0 && posts.length === 0 && (
           <Card className="p-3 sm:p-4 bg-card/80 border-dashed border-border/60">
             <p className="text-[10px] sm:text-[11px] text-muted-foreground">
               You haven't published any stories yet. Create your first post to
@@ -361,7 +555,27 @@ const RestaurantBlogManagement = () => {
           </Card>
         )}
 
-        {posts.map((post) => (
+        {filteredAndSortedPosts.length === 0 && posts.length > 0 && (
+          <Card className="p-3 sm:p-4 bg-card/80 border-dashed border-border/60">
+            <div className="space-y-2">
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground">
+                No blog posts match your current filters.
+              </p>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setFilterBy('all');
+                  setSortBy('newest');
+                }}
+                className="text-primary hover:text-primary/80 text-xs"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {filteredAndSortedPosts.map((post) => (
           <Card
             key={post.id}
             className={cn(

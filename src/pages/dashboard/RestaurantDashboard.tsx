@@ -20,6 +20,7 @@ import MenuManagement from '@/components/dashboard/MenuManagement';
 import RestaurantSettings from '@/components/dashboard/RestaurantSettings';
 import RestaurantBlogManagement from '@/components/dashboard/RestaurantBlogManagement';
 import { useOrderNotifications } from '@/hooks/useOrderNotifications';
+import { useRestaurantBlogNotifications } from '@/hooks/useRestaurantBlogNotifications';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,12 +55,53 @@ const RestaurantDashboard = () => {
 
   const {
     restaurantId,
-    notifications,
-    unreadCount,
-    loading: notificationsLoading,
-    markAllAsRead,
-    markAsRead,
+    notifications: orderNotifications,
+    unreadCount: orderUnreadCount,
+    loading: orderNotificationsLoading,
+    markAllAsRead: markAllOrdersAsRead,
+    markAsRead: markOrderAsRead,
   } = useOrderNotifications({ limit: 50, enableSound: true });
+
+  const {
+    notifications: blogNotifications,
+    unreadCount: blogUnreadCount,
+    loading: blogNotificationsLoading,
+    markAllAsRead: markAllBlogAsRead,
+    markAsRead: markBlogAsRead,
+  } = useRestaurantBlogNotifications({ limit: 50, enableSound: true });
+
+  // Combine notifications and counts
+  const notifications = [...orderNotifications, ...blogNotifications];
+  
+  // Sort notifications with newest first (unread notifications should appear at the top)
+  const sortedNotifications = notifications.sort((a, b) => {
+    // First sort by unread status (unread first)
+    if (a.status !== b.status) {
+      return a.status === 'unread' ? -1 : 1;
+    }
+    // Then sort by creation date (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+  
+  const unreadCount = orderUnreadCount + blogUnreadCount;
+  const notificationsLoading = orderNotificationsLoading || blogNotificationsLoading;
+  
+  const markAllAsRead = async () => {
+    await Promise.all([
+      markAllOrdersAsRead(),
+      markAllBlogAsRead()
+    ]);
+  };
+
+  const markAsRead = async (id: string) => {
+    // Try order notifications first, then blog notifications
+    const orderNotification = orderNotifications.find(n => n.id === id);
+    if (orderNotification) {
+      await markOrderAsRead(id);
+    } else {
+      await markBlogAsRead(id);
+    }
+  };
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<any | null>(null);
@@ -148,6 +190,21 @@ const RestaurantDashboard = () => {
     }
   };
 
+  const handleOpenNotificationBlog = async (notification: any) => {
+    if (!notification?.blog_post_id) return;
+    
+    // Mark this notification as read
+    if (notification.id) {
+      markAsRead(notification.id);
+    }
+
+    // Navigate to blog management tab and scroll to the specific post if possible
+    navigate('/dashboard?tab=blog');
+    
+    // Optional: You could add logic here to highlight the specific blog post
+    // or scroll to it, but for now we just navigate to the blog tab
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-background pb-20">
       {/* Header */}
@@ -188,7 +245,7 @@ const RestaurantDashboard = () => {
               >
                 <DropdownMenuLabel className="flex items-center justify-between px-3 py-2">
                   <div className="flex flex-col">
-                    <span className="text-sm font-semibold">Order Notifications</span>
+                    <span className="text-sm font-semibold">Notifications</span>
                     <span className="text-[10px] text-muted-foreground">
                       {notificationsLoading
                         ? 'Loading...'
@@ -223,20 +280,35 @@ const RestaurantDashboard = () => {
                         You will see new orders here in real time.
                       </div>
                     ) : (
-                      notifications.map((n) => {
-                        const title =
-                          n.message && n.message.trim().length > 0
+                      sortedNotifications.map((n) => {
+                        // Handle both order and blog comment notifications
+                        const isBlogNotification = 'blog_post_id' in n;
+                        
+                        let title = '';
+                        if (isBlogNotification) {
+                          title = n.message || `${n.customer_name || 'Someone'} commented on your blog post`;
+                        } else {
+                          title = n.message && n.message.trim().length > 0
                             ? n.message
                             : n.customer_name && n.total_amount
                             ? `${n.customer_name} placed an order of ${Number(
                                 n.total_amount
                               ).toLocaleString()} MMK`
                             : 'New order received';
+                        }
+
+                        const handleNotificationClick = () => {
+                          if (isBlogNotification) {
+                            handleOpenNotificationBlog(n);
+                          } else {
+                            handleOpenNotificationOrder(n);
+                          }
+                        };
 
                         return (
                           <DropdownMenuItem
                             key={n.id}
-                            onClick={() => handleOpenNotificationOrder(n)}
+                            onClick={handleNotificationClick}
                             className={`
                               w-full px-3 py-2.5 flex items-start gap-2
                               cursor-pointer transition-colors
@@ -286,6 +358,21 @@ const RestaurantDashboard = () => {
                                 })()}
                               </div>
                             </div>
+                            
+                            {/* Type indicator */}
+                            {isBlogNotification ? (
+                              <div className="flex-shrink-0">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[7px] font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                  Blog
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex-shrink-0">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[7px] font-medium bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                  Order
+                                </span>
+                              </div>
+                            )}
                           </DropdownMenuItem>
                         );
                       })

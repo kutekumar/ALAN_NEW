@@ -2,22 +2,24 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-export interface OrderNotification {
+export interface RestaurantBlogNotification {
   id: string;
-  order_id: string;
   restaurant_id: string;
-  customer_id: string | null;
+  customer_id: string;
+  blog_post_id: string;
+  comment_id: string;
   title: string;
   message: string;
   status: 'unread' | 'read';
   created_at: string;
-  // Enriched for UI
-  customer_name?: string | null;
-  total_amount?: number | null;
-  order_status?: string | null;
+  // Enriched fields
+  customer_name?: string;
+  customer_email?: string;
+  blog_title?: string;
+  comment_content?: string;
 }
 
-interface UseOrderNotificationsOptions {
+interface UseRestaurantBlogNotificationsOptions {
   /**
    * Maximum notifications to keep in memory for dropdown/history.
    * Default: 50
@@ -43,14 +45,14 @@ const getNotificationAudio = () => {
 /**
  * Hook used in Restaurant Owner Dashboard to:
  * - Resolve the restaurant owned by current user
- * - Fetch latest notifications from order_notifications
- * - Subscribe to realtime inserts for that restaurant_id
+ * - Fetch latest blog comment notifications for that restaurant
+ * - Subscribe to realtime inserts for new customer comments on blog posts
  * - Expose unread count, list, mark-as-read operations
  */
-export function useOrderNotifications(options: UseOrderNotificationsOptions = {}) {
+export function useRestaurantBlogNotifications(options: UseRestaurantBlogNotificationsOptions = {}) {
   const { user } = useAuth();
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<OrderNotification[]>([]);
+  const [notifications, setNotifications] = useState<RestaurantBlogNotification[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [initialFetched, setInitialFetched] = useState<boolean>(false);
 
@@ -68,13 +70,13 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
         audio.currentTime = 0;
         try {
           await audio.play();
-          console.log('🔔 Restaurant notification sound played successfully');
+          console.log('🔔 Blog comment notification sound played successfully');
         } catch (error) {
-          console.warn('🔇 Restaurant notification sound blocked by autoplay policy:', error);
+          console.warn('🔇 Blog comment notification sound blocked by autoplay policy:', error);
           // Fallback: try to play after user interaction
           const handleUserInteraction = () => {
             audio.play().catch(() => {
-              console.warn('🔇 Restaurant fallback sound playback also failed');
+              console.warn('🔇 Blog comment fallback sound playback also failed');
             });
             document.removeEventListener('click', handleUserInteraction);
             document.removeEventListener('keydown', handleUserInteraction);
@@ -87,7 +89,7 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
 
       attemptPlay();
     } catch (error) {
-      console.error('❌ Failed to play restaurant notification sound:', error);
+      console.error('❌ Failed to play blog comment notification sound:', error);
     }
   }, [enableSound]);
 
@@ -123,57 +125,45 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
     fetchRestaurantForOwner();
   }, [user]);
 
-  // Initial fetch of notifications once we know restaurant_id
+  // Initial fetch of blog comment notifications once we know restaurant_id
   useEffect(() => {
     const fetchInitialNotifications = async () => {
       if (!restaurantId || initialFetched) return;
       setLoading(true);
 
+      // Fetch blog comment notifications for this restaurant with enriched data
       const { data, error } = await supabase
-        .from('order_notifications')
-        .select(
-          `
-          id,
-          order_id,
-          restaurant_id,
-          customer_id,
-          title,
-          message,
-          status,
-          created_at,
-          orders!inner (
-            total_amount,
-            status,
-            customer_id
-          ),
-          profiles!left (
-            full_name
-          )
-        `
-        )
+        .from('blog_comment_notifications')
+        .select(`
+          *,
+          blog_posts!inner (title),
+          profiles!left (full_name)
+        `)
         .eq('restaurant_id', restaurantId)
         .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) {
-        console.error('Error fetching order_notifications:', error);
+        console.error('Error fetching blog comment notifications:', error);
         setNotifications([]);
       } else {
-        const normalized: OrderNotification[] = (data || []).map((row: any) => {
-          const order = Array.isArray(row.orders) ? row.orders[0] : row.orders || {};
+        const normalized: RestaurantBlogNotification[] = (data || []).map((row: any) => {
+          const blogPost = Array.isArray(row.blog_posts) ? row.blog_posts[0] : row.blog_posts || {};
           const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles || {};
+          
           return {
             id: row.id,
-            order_id: row.order_id,
             restaurant_id: row.restaurant_id,
             customer_id: row.customer_id,
+            blog_post_id: row.blog_post_id,
+            comment_id: row.comment_id,
             title: row.title,
             message: row.message,
             status: row.status,
             created_at: row.created_at,
             customer_name: profile?.full_name ?? null,
-            total_amount: order?.total_amount ?? null,
-            order_status: order?.status ?? null,
+            blog_title: blogPost?.title ?? null,
+            comment_content: row.comment_content ?? null,
           };
         });
 
@@ -187,52 +177,53 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
     fetchInitialNotifications();
   }, [restaurantId, initialFetched, limit]);
 
-  // Realtime subscription for new notifications with enrichment + sound
+  // Realtime subscription for new blog comment notifications
   useEffect(() => {
     if (!restaurantId) return;
 
     const channel = supabase
-      .channel(`order-notifications-${restaurantId}`)
+      .channel(`blog-comment-notifications-${restaurantId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'order_notifications',
+          table: 'blog_comment_notifications',
           filter: `restaurant_id=eq.${restaurantId}`,
         },
         async (payload) => {
           const row: any = payload.new;
 
-          // Enrich for better UI text
-          const { data: orderData } = await supabase
-            .from('orders')
-            .select('total_amount, status, customer_id')
-            .eq('id', row.order_id)
+          // Enrich notification with blog post and customer details
+          const { data: blogPostData } = await supabase
+            .from('blog_posts')
+            .select('title')
+            .eq('id', row.blog_post_id)
             .single();
 
           let customerName: string | null = null;
-          if (orderData?.customer_id) {
+          if (row.customer_id) {
             const { data: profile } = await supabase
               .from('profiles')
               .select('full_name')
-              .eq('id', orderData.customer_id)
+              .eq('id', row.customer_id)
               .single();
             customerName = profile?.full_name ?? null;
           }
 
-          const incoming: OrderNotification = {
+          const incoming: RestaurantBlogNotification = {
             id: row.id,
-            order_id: row.order_id,
             restaurant_id: row.restaurant_id,
             customer_id: row.customer_id,
+            blog_post_id: row.blog_post_id,
+            comment_id: row.comment_id,
             title: row.title,
             message: row.message,
             status: row.status,
             created_at: row.created_at,
             customer_name: customerName,
-            total_amount: orderData?.total_amount ?? null,
-            order_status: orderData?.status ?? null,
+            blog_title: blogPostData?.title ?? null,
+            comment_content: row.comment_content ?? null,
           };
 
           setNotifications((prev) => {
@@ -240,12 +231,15 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
             return [incoming, ...prev].slice(0, limit);
           });
 
-          playSound();
+          // Play sound for unread notifications immediately
+          if (row.status === 'unread') {
+            playSound();
+          }
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          console.log(`🔔 Subscribed to realtime order_notifications for restaurant ${restaurantId}`);
+          console.log(`🔔 Subscribed to realtime blog comment notifications for restaurant ${restaurantId}`);
         }
       });
 
@@ -256,6 +250,16 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
 
   const unreadCount = notifications.filter((n) => n.status === 'unread').length;
 
+  // Sort notifications with newest first (unread notifications should appear at the top)
+  const sortedNotifications = [...notifications].sort((a, b) => {
+    // First sort by unread status (unread first)
+    if (a.status !== b.status) {
+      return a.status === 'unread' ? -1 : 1;
+    }
+    // Then sort by creation date (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
   const markAllAsRead = useCallback(async () => {
     if (!restaurantId || notifications.length === 0) return;
 
@@ -263,12 +267,12 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
     if (unreadIds.length === 0) return;
 
     const { error } = await supabase
-      .from('order_notifications')
+      .from('blog_comment_notifications')
       .update({ status: 'read' })
       .in('id', unreadIds);
 
     if (error) {
-      console.error('Failed to mark notifications as read:', error);
+      console.error('Failed to mark blog comment notifications as read:', error);
       return;
     }
 
@@ -280,12 +284,12 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
   const markAsRead = useCallback(async (id: string) => {
     if (!id) return;
     const { error } = await supabase
-      .from('order_notifications')
+      .from('blog_comment_notifications')
       .update({ status: 'read' })
       .eq('id', id);
 
     if (error) {
-      console.error('Failed to mark notification as read:', error);
+      console.error('Failed to mark blog comment notification as read:', error);
       return;
     }
 
@@ -296,7 +300,7 @@ export function useOrderNotifications(options: UseOrderNotificationsOptions = {}
 
   return {
     restaurantId,
-    notifications,
+    notifications: sortedNotifications,
     unreadCount,
     loading,
     markAllAsRead,

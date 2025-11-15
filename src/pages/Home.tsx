@@ -15,6 +15,7 @@ import {
   Shield,
   Crown,
   LogOut,
+  MessageCircle,
 } from 'lucide-react';
 import ALANLogo from '@/imgs/ALANLOGO.png';
 import { useAuth } from '@/contexts/AuthContext';
@@ -52,6 +53,9 @@ const Home = () => {
       message: string;
       status: 'unread' | 'read';
       created_at: string;
+      reply_content?: string;
+      restaurant_name?: string;
+      blog_post_id?: string;
     }[]
   >([]);
   const [selectedNotification, setSelectedNotification] = useState<{
@@ -60,8 +64,12 @@ const Home = () => {
     title: string;
     message: string;
     created_at: string;
+    reply_content?: string;
+    restaurant_name?: string;
+    blog_post_id?: string;
   } | null>(null);
   const [selectedNotificationOrder, setSelectedNotificationOrder] = useState<any | null>(null);
+  const [selectedBlogPost, setSelectedBlogPost] = useState<any | null>(null);
   const [profileMenuRef, setProfileMenuRef] = useState<HTMLDivElement | null>(null);
   const [notificationsRef, setNotificationsRef] = useState<HTMLDivElement | null>(null);
 
@@ -105,7 +113,7 @@ const Home = () => {
     if (!user) return;
     const { data, error } = await supabase
       .from('customer_notifications')
-      .select('id, order_id, title, message, status, created_at')
+      .select('id, order_id, title, message, status, created_at, reply_content, restaurant_name, blog_post_id')
       .eq('customer_id', user.id)
       .order('created_at', { ascending: false })
       .limit(15);
@@ -115,15 +123,18 @@ const Home = () => {
       return;
     }
    setNotifications(
-     (data || []) as {
-       id: string;
-       order_id?: string | null;
-       title: string;
-       message: string;
-       status: 'unread' | 'read';
-       created_at: string;
-     }[]
-   );
+      (data || []) as {
+        id: string;
+        order_id?: string | null;
+        title: string;
+        message: string;
+        status: 'unread' | 'read';
+        created_at: string;
+        reply_content?: string;
+        restaurant_name?: string;
+        blog_post_id?: string;
+      }[]
+    );
   };
 
   // Simple loader for notification sound (aligned with useOrderNotifications)
@@ -173,6 +184,9 @@ const Home = () => {
             message: row.message,
             status: row.status as 'unread' | 'read',
             created_at: row.created_at,
+            reply_content: row.reply_content,
+            restaurant_name: row.restaurant_name,
+            blog_post_id: row.blog_post_id,
           };
 
           setNotifications((prev) => {
@@ -229,6 +243,9 @@ const Home = () => {
     message: string;
     status: 'unread' | 'read';
     created_at: string;
+    reply_content?: string;
+    restaurant_name?: string;
+    blog_post_id?: string;
   }) => {
     // Store context globally for StarRating to use when submitting
     if (typeof window !== 'undefined') {
@@ -268,6 +285,36 @@ const Home = () => {
         }
       } catch (err) {
         console.error('Failed to load order summary for notification', err);
+      }
+    }
+
+    // If this is a blog comment reply notification, fetch the blog post details
+    if (n.blog_post_id && n.title === 'Comment Reply') {
+      try {
+        const { data: blogPost, error: blogError } = await supabase
+          .from('blog_posts')
+          .select(
+            `
+            id,
+            title,
+            excerpt,
+            content,
+            hero_image_url,
+            created_at,
+            restaurants (
+              name,
+              image_url
+            )
+          `
+          )
+          .eq('id', n.blog_post_id)
+          .single();
+
+        if (!blogError && blogPost) {
+          setSelectedBlogPost(blogPost);
+        }
+      } catch (err) {
+        console.error('Failed to load blog post for notification', err);
       }
     }
 
@@ -556,7 +603,9 @@ const Home = () => {
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/40 flex items-center justify-center">
-                  {selectedNotification.message.includes('Please give us rating for our service.') ? (
+                  {selectedNotification.title === 'Comment Reply' ? (
+                    <MessageCircle className="w-4 h-4 text-primary" />
+                  ) : selectedNotification.message.includes('Please give us rating for our service.') ? (
                     <span className="text-emerald-400 text-lg">✓</span>
                   ) : selectedNotification.title.toLowerCase().includes('order placed') ||
                     selectedNotification.message.toLowerCase().includes('order has been placed') ? (
@@ -588,6 +637,7 @@ const Home = () => {
                 onClick={() => {
                   setSelectedNotification(null);
                   setSelectedNotificationOrder(null);
+                  setSelectedBlogPost(null);
                 }}
                 className="text-[9px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent/60"
               >
@@ -595,10 +645,72 @@ const Home = () => {
               </button>
             </div>
 
+            {/* Blog Post Header for Comment Reply notifications */}
+            {selectedNotification.title === 'Comment Reply' && selectedBlogPost && (
+              <div className="mt-2 pt-2 border-t border-border/40 space-y-2">
+                <div className="flex items-start gap-2">
+                  {selectedBlogPost.restaurants?.image_url ? (
+                    <img
+                      src={selectedBlogPost.restaurants.image_url}
+                      alt={selectedBlogPost.restaurants.name}
+                      className="w-10 h-10 rounded-lg object-cover border border-border/40"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary via-primary/60 to-amber-400 flex items-center justify-center text-white text-xs font-semibold border border-border/40">
+                      {selectedBlogPost.restaurants?.name?.charAt(0) || 'R'}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-semibold text-foreground">
+                      {selectedBlogPost.restaurants?.name || 'Restaurant'}
+                    </div>
+                    <h3 className="text-[11px] font-bold text-foreground leading-tight mt-0.5 line-clamp-2">
+                      {selectedBlogPost.title}
+                    </h3>
+                    <div className="text-[8px] text-muted-foreground mt-1">
+                      {new Date(selectedBlogPost.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Primary message */}
             <div className="mt-1 text-[10px] leading-relaxed text-foreground whitespace-pre-line">
               {selectedNotification.message}
             </div>
+
+            {/* Enhanced Reply Content for Blog Comment Replies */}
+            {selectedNotification.title === 'Comment Reply' && selectedNotification.reply_content && (
+              <div className="mt-2 pt-2 border-t border-border/40 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-300 to-emerald-500 flex items-center justify-center text-white text-[8px] font-semibold border border-emerald-300/70">
+                    {selectedNotification.restaurant_name?.charAt(0) || 'R'}
+                  </div>
+                  <div className="text-[9px] font-semibold text-foreground">
+                    {selectedNotification.restaurant_name || 'Restaurant Team'} replied:
+                  </div>
+                </div>
+                <div className="bg-muted/40 rounded-xl p-2.5 border border-border/30">
+                  <p className="text-[10px] text-foreground leading-relaxed">
+                    {selectedNotification.reply_content}
+                  </p>
+                </div>
+                <div className="text-[8px] text-muted-foreground text-right">
+                  {(() => {
+                    const d = new Date(selectedNotification.created_at);
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const year = d.getFullYear();
+                    let hours = d.getHours();
+                    const minutes = String(d.getMinutes()).padStart(2, '0');
+                    const ampm = hours >= 12 ? 'PM' : 'AM';
+                    hours = hours % 12 || 12;
+                    return `Replied on ${day}/${month}/${year} at ${hours}:${minutes} ${ampm}`;
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* If this is an "order placed" style notification, show a rich order summary */}
             {selectedNotification.order_id &&

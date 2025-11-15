@@ -1,17 +1,13 @@
--- Add Blog Comment Reply Notifications
--- This script adds notifications when Restaurant Owners reply to customer comments
+-- Fix and Enhance Blog Comment Reply Trigger
+-- This script ensures the trigger is properly set up with all required columns
 
--- 1. Add a new column to track which comment a reply is for
--- This should already exist from our previous work, but let's ensure it's there
-ALTER TABLE IF EXISTS public.blog_comments
-ADD COLUMN IF NOT EXISTS parent_comment_id uuid REFERENCES public.blog_comments(id) ON DELETE CASCADE;
+-- 1. First, drop the existing trigger if it exists
+DROP TRIGGER IF EXISTS trg_blog_comment_reply_notification ON public.blog_comments;
 
--- 2. Add new columns to customer_notifications table for enhanced blog reply notifications
-ALTER TABLE IF EXISTS public.customer_notifications
-ADD COLUMN IF NOT EXISTS reply_content text,
-ADD COLUMN IF NOT EXISTS restaurant_name text;
+-- 2. Drop the existing function if it exists
+DROP FUNCTION IF EXISTS public.handle_blog_comment_reply();
 
--- 2. Create a function to send notification when a Restaurant Owner replies to a comment
+-- 3. Create the enhanced function to handle blog comment replies
 CREATE OR REPLACE FUNCTION public.handle_blog_comment_reply()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -23,6 +19,7 @@ DECLARE
   v_customer_name text;
   v_blog_title text;
   v_notification_message text;
+  v_reply_content text;
 BEGIN
   -- Only process replies (comments with parent_comment_id)
   IF NEW.parent_comment_id IS NULL THEN
@@ -60,17 +57,14 @@ BEGIN
   WHERE id = NEW.blog_post_id;
 
   -- Get the actual reply content
-  DECLARE v_reply_content text;
-  BEGIN
-    v_reply_content := NEW.content;
-  END;
+  v_reply_content := NEW.content;
 
   -- Create personalized notification message that includes the actual reply
   v_notification_message := format(
     '%s replied: "%s"',
     COALESCE(v_restaurant_name, 'Restaurant'),
     -- Truncate reply content to 100 characters for notification preview
-    CASE
+    CASE 
       WHEN length(v_reply_content) > 100 THEN left(v_reply_content, 97) || '...'
       ELSE v_reply_content
     END
@@ -104,21 +98,30 @@ BEGIN
 END;
 $$;
 
--- 3. Create trigger for blog comment replies
-DROP TRIGGER IF EXISTS trg_blog_comment_reply_notification ON public.blog_comments;
+-- 4. Create the trigger for blog comment replies
 CREATE TRIGGER trg_blog_comment_reply_notification
   AFTER INSERT ON public.blog_comments
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_blog_comment_reply();
 
--- 4. Create index for better performance on customer notifications
+-- 5. Add the missing columns if they don't exist (safety check)
+ALTER TABLE IF EXISTS public.customer_notifications 
+ADD COLUMN IF NOT EXISTS reply_content text,
+ADD COLUMN IF NOT EXISTS restaurant_name text,
+ADD COLUMN IF NOT EXISTS blog_post_id uuid REFERENCES public.blog_posts(id) ON DELETE CASCADE;
+
+-- 6. Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_customer_notifications_customer_id_status
   ON public.customer_notifications (customer_id, status, created_at DESC);
 
--- 5. Test the trigger
--- You can test by inserting a reply comment:
--- INSERT INTO public.blog_comments (blog_post_id, customer_id, content, parent_comment_id)
--- VALUES ('your-blog-post-id', 'restaurant-owner-id', 'Thank you for your feedback!', 'customer-comment-id');
+CREATE INDEX IF NOT EXISTS idx_customer_notifications_blog_post_id 
+  ON public.customer_notifications (blog_post_id);
 
--- 6. Verify the setup
-SELECT 'Setup complete. Blog comment reply notifications are now active.' as status;
+-- 7. Verify everything is set up correctly
+SELECT 
+    'Trigger and function created successfully' as status,
+    EXISTS(SELECT 1 FROM pg_trigger WHERE tblname = 'blog_comments' AND evtname = 'trg_blog_comment_reply_notification') as trigger_exists,
+    EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'handle_blog_comment_reply') as function_exists,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'customer_notifications' AND column_name = 'blog_post_id') as blog_post_id_exists,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'customer_notifications' AND column_name = 'reply_content') as reply_content_exists,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'customer_notifications' AND column_name = 'restaurant_name') as restaurant_name_exists;
